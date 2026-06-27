@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>MCP Host Tester</title>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 640px; margin: 2rem auto; padding: 0 1rem; }
+    #log { border: 1px solid #ccc; border-radius: 8px; padding: 1rem; height: 320px;
+           overflow-y: auto; margin-bottom: 1rem; background: #fafafa; }
+    .msg  { margin: .35rem 0; white-space: pre-wrap; }
+    .user { color: #1a56db; }
+    .host { color: #057a55; }
+    .sys  { color: #777; font-style: italic; }
+    textarea { width: 100%; box-sizing: border-box; font: inherit; }
+    button { margin-top: .5rem; padding: .4rem 1rem; }
+  </style>
+</head>
+<body>
+  <h1>MCP Host Tester</h1>
+  <div id="log"></div>
+  <textarea id="input" rows="3" placeholder="Ask something..."></textarea>
+  <br />
+  <button id="send" disabled>Send</button>
+
+  <script>
+    const log = document.getElementById("log");
+    const sendBtn = document.getElementById("send");
+    const input = document.getElementById("input");
+
+    function append(text, cls) {
+      const div = document.createElement("div");
+      div.className = "msg " + cls;
+      div.textContent = text;
+      log.appendChild(div);
+      log.scrollTop = log.scrollHeight;
+    }
+
+    async function init() {
+      // 1) Establish the session cookie BEFORE anything else, so the POST and the
+      //    socket below resolve to the SAME server-side session.
+      const res = await fetch("/api/session", { method: "POST" });
+      const { sessionId } = await res.json();
+      append("session: " + sessionId, "sys");
+
+      // 2) Open the socket. The cookie rides along on this same-origin handshake.
+      const proto = location.protocol === "https:" ? "wss" : "ws";
+      const ws = new WebSocket(`${proto}://${location.host}/ws`);
+      ws.onopen    = () => { sendBtn.disabled = false; append("(socket open)", "sys"); };
+      ws.onmessage = (e) => append(e.data, "host");
+      ws.onclose   = () => { sendBtn.disabled = true; append("(socket closed)", "sys"); };
+    }
+
+    sendBtn.addEventListener("click", async () => {
+      const message = input.value.trim();
+      if (!message) return;
+      append(message, "user");
+      input.value = "";
+
+      // POST the message; the cookie goes automatically. Quick 200 OK back; the real
+      // answer arrives later over the socket.
+      await fetch("/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ message })
+      });
+    });
+
+    init();
+  </script>
+</body>
+</html>
