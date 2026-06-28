@@ -18,13 +18,13 @@ builder.Services.AddSession(options =>
 // --- WebSocket registry (step 1) ---
 builder.Services.AddSingleton<ChatConnectionRegistry>();
 
-// --- LLM backend (step 2) ---
+// --- LLM backend (step 2, modified in step 4) ---
+// NOTE: .UseFunctionInvocation() is intentionally REMOVED here. With it, the middleware
+// would auto-resolve tool calls and the ChatWorker loop would never see them. Without
+// it, the model returns raw FunctionCallContent and we drive the tool loop ourselves.
+// Put it back (and simplify ChatWorker.ProcessAsync) to switch to automatic invocation.
 builder.Services.AddChatClient(_ =>
-    new AnthropicClient()
-        .AsIChatClient("claude-haiku-4-5")
-        .AsBuilder()
-        .UseFunctionInvocation()
-        .Build());
+    new AnthropicClient().AsIChatClient("claude-haiku-4-5"));
 
 // --- Host-loop infrastructure (step 2) ---
 builder.Services.AddSingleton<ChatJobQueue>();
