@@ -70,7 +70,15 @@ public sealed class ChatWorker(
             var results = new List<AIContent>();
             foreach (var call in calls)
             {
-                await registry.SendAsync(job.SessionId, $"(calling {call.Name}...)");
+                string callArguments = call.Arguments == null ? "no arguments" : "";
+                if(call.Arguments != null)
+                {
+                    foreach(var arg in call.Arguments)
+                    {
+                        callArguments += arg.ToString();
+                    }
+                }    
+                await registry.SendAsync(job.SessionId, $"(calling {call.Name} with arguments {callArguments})");
                 results.Add(await InvokeToolAsync(call, ct));
             }
 
