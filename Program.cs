@@ -1,32 +1,60 @@
+using System.Text.Json;
+using Anthropic;
 using McpHost;
+using Microsoft.Extensions.AI;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// In-memory session store. Fine for a learning harness; not durable, doesn't scale
-// across multiple servers. The session id is what correlates the POST and the socket.
+// --- Session (step 1) ---
 builder.Services.AddDistributedMemoryCache();
 builder.Services.AddSession(options =>
 {
     options.Cookie.Name = ".McpHost.Session";
     options.Cookie.HttpOnly = true;
-    options.Cookie.IsEssential = true; // ignore GDPR
+    options.Cookie.IsEssential = true;
     options.IdleTimeout = TimeSpan.FromHours(2);
 });
 
-// Shared map of session id -> live WebSocket. Singleton because it must be the same
-// instance across every request.
+// --- WebSocket registry (step 1) ---
 builder.Services.AddSingleton<ChatConnectionRegistry>();
+
+// --- LLM backend (step 2) ---
+builder.Services.AddChatClient(_ =>
+    new AnthropicClient()
+        .AsIChatClient("claude-haiku-4-5")
+        .AsBuilder()
+        .UseFunctionInvocation()
+        .Build());
+
+// --- Host-loop infrastructure (step 2) ---
+builder.Services.AddSingleton<ChatJobQueue>();
+builder.Services.AddSingleton<ConversationStore>();
+builder.Services.AddHostedService<ChatWorker>();
+
+// --- MCP servers (step 3) ---
+// Load the dedicated config file (his preferred shape) and bind it. Case-insensitive
+// so "name" maps to Name, etc. ContentRootPath is the project dir during `dotnet run`.
+var mcpConfigPath = Path.Combine(builder.Environment.ContentRootPath, "mcp-servers.json");
+var mcpFile = JsonSerializer.Deserialize<McpServersFile>(
+                  File.ReadAllText(mcpConfigPath),
+                  new JsonSerializerOptions { PropertyNameCaseInsensitive = true })
+              ?? new McpServersFile();
+builder.Services.AddSingleton<IReadOnlyList<McpServerConfig>>(mcpFile.Servers);
+
+// The registry is a singleton (so the /api/tools endpoint and, later, the worker can
+// read the catalog) AND a hosted service (so it connects on startup, disposes on
+// shutdown). Register the singleton, then point the hosted service at that same instance.
+builder.Services.AddSingleton<McpServerRegistry>();
+builder.Services.AddHostedService(sp => sp.GetRequiredService<McpServerRegistry>());
 
 var app = builder.Build();
 
-app.UseDefaultFiles();   // serve wwwroot/index.html at "/"
+app.UseDefaultFiles();
 app.UseStaticFiles();
 app.UseWebSockets();
-app.UseSession();        // must run before any endpoint that touches Session
+app.UseSession();
 
-// (a) Establish the session cookie BEFORE the socket opens, so both resolve to the
-//     same session. ASP.NET only persists the session (and issues the cookie) once
-//     you actually write a value to it.
+// Establish the session cookie before the socket opens (step 1).
 app.MapPost("/api/session", async (HttpContext http) =>
 {
     http.Session.SetString("touched", "1");
@@ -34,25 +62,20 @@ app.MapPost("/api/session", async (HttpContext http) =>
     return Results.Ok(new { sessionId = http.Session.Id });
 });
 
-// (b) The message endpoint the form submits to.
-app.MapPost("/api/chat", (ChatRequest request, HttpContext http, ChatConnectionRegistry registry) =>
+// Enqueue a job; the ChatWorker pushes the answer over the socket (step 2).
+app.MapPost("/api/chat", async (ChatRequest request, HttpContext http, ChatJobQueue queue) =>
 {
     var sessionId = http.Session.Id;
-
-    // Kick off the (eventually long-running) work WITHOUT awaiting, so the request
-    // returns immediately. Step 1 just echoes after a delay to simulate the LLM.
-    // Task.Run fire-and-forget is OK for a stub but unsafe for real work (no error
-    // surface, dies on shutdown). Step 2 replaces this with a Channel + BackgroundService.
-    _ = Task.Run(async () =>
-    {
-        await Task.Delay(1000);
-        await registry.SendAsync(sessionId, $"(stub) host received: \"{request.Message}\"");
-    });
-
-    return Results.Ok(new { status = "accepted" });   // real answer arrives over the socket
+    await queue.EnqueueAsync(new ChatJob(sessionId, request.Message));
+    return Results.Ok(new { status = "accepted" });
 });
 
-// (c) The WebSocket endpoint. Parks the socket in the registry under the SAME session id.
+// NEW (step 3): inspect the aggregated MCP tool catalog in the browser. No LLM involved —
+// this just proves the connection works. Visit http://localhost:5xxx/api/tools.
+app.MapGet("/api/tools", (McpServerRegistry mcp) =>
+    Results.Ok(mcp.Tools.Select(t => new { t.Name, t.Description })));
+
+// WebSocket endpoint (step 1).
 app.Map("/ws", async (HttpContext http, ChatConnectionRegistry registry) =>
 {
     if (!http.WebSockets.IsWebSocketRequest)
@@ -68,5 +91,4 @@ app.Map("/ws", async (HttpContext http, ChatConnectionRegistry registry) =>
 
 app.Run();
 
-// Shape of the POST body: { "message": "..." }
 public record ChatRequest(string Message);
