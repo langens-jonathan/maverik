@@ -1,0 +1,36 @@
+{
+  "servers": [
+    {
+      "name": "github",
+      "description": "GitHub's official remote MCP server (read-only).",
+      "transport": "http",
+      "endpoint": "https://api.githubcopilot.com/mcp/",
+      "headers": {
+        "Authorization": "Bearer idonotexistshaha",
+        "X-MCP-Readonly": "true"
+      }
+    },
+    {
+      "name": "deepwiki",
+      "description": "Q&A over any public GitHub repo (Cognition DeepWiki). No auth.",
+      "transport": "http",
+      "endpoint": "https://mcp.deepwiki.com/mcp",
+      "headers": {}
+    },
+    {
+      "name": "microsoft-learn",
+      "description": "Search official Microsoft / .NET documentation. No auth.",
+      "transport": "http",
+      "endpoint": "https://learn.microsoft.com/api/mcp",
+      "headers": {}
+    },
+    {
+      "name": "context7",
+      "description": "Version-pinned library/framework docs (Context7). No auth for basic use.",
+      "transport": "http",
+      "endpoint": "https://mcp.context7.com/mcp",
+      "headers": {}
+    }
+
+  ]
+}
