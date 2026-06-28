@@ -16,10 +16,15 @@ public sealed class McpServerRegistry(
 {
     private readonly Dictionary<string, McpClient> _clients = new();
     private readonly List<McpClientTool> _tools = new();
+    private readonly Dictionary<string, IReadOnlyList<McpClientTool>> _toolsByServer = new();
 
     // Flat tool catalog across all servers — what step 4 hands to the LLM.
     public IReadOnlyList<McpClientTool> Tools => _tools;
     public IReadOnlyDictionary<string, McpClient> Clients => _clients;
+
+    // The same tools, but kept grouped by the server that contributed them. Useful for
+    // inspection (and the seed for namespacing once two servers can share a tool name).
+    public IReadOnlyDictionary<string, IReadOnlyList<McpClientTool>> ToolsByServer => _toolsByServer;
 
     public async Task StartAsync(CancellationToken ct)
     {
@@ -35,6 +40,7 @@ public sealed class McpServerRegistry(
 
                 _clients[config.Name] = client;
                 _tools.AddRange(tools);
+                _toolsByServer[config.Name] = tools.ToList();
 
                 log.LogInformation("  '{Name}' connected: {Count} tools.", config.Name, tools.Count);
                 foreach (var tool in tools)

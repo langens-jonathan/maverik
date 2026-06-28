@@ -70,10 +70,15 @@ app.MapPost("/api/chat", async (ChatRequest request, HttpContext http, ChatJobQu
     return Results.Ok(new { status = "accepted" });
 });
 
-// NEW (step 3): inspect the aggregated MCP tool catalog in the browser. No LLM involved —
-// this just proves the connection works. Visit http://localhost:5xxx/api/tools.
+// Inspect the aggregated MCP tool catalog in the browser, grouped by server. No LLM
+// involved — this just proves the connections work. Only servers that connected appear.
 app.MapGet("/api/tools", (McpServerRegistry mcp) =>
-    Results.Ok(mcp.Tools.Select(t => new { t.Name, t.Description })));
+    Results.Ok(mcp.ToolsByServer.Select(server => new
+    {
+        server = server.Key,
+        toolCount = server.Value.Count,
+        tools = server.Value.Select(t => new { t.Name, t.Description })
+    })));
 
 // WebSocket endpoint (step 1).
 app.Map("/ws", async (HttpContext http, ChatConnectionRegistry registry) =>
