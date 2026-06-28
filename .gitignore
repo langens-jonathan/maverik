@@ -1,3 +1,6 @@
+# MCP Host configuration
+mcp-servers.json
+
 # Build output
 [Bb]in/
 [Oo]bj/
