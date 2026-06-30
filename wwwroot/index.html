@@ -21,9 +21,24 @@
   <div id="log"></div>
   <textarea id="input" rows="3" placeholder="Ask something..."></textarea>
   <br />
-  <button id="send" disabled>Send</button>
+  <button id="send">Send</button>
 
+  <!--
+    Reference client for the MCP host API. This page is for local testing only; the platform
+    front end implements the same contract against the backend /api endpoints:
+
+      1. POST /api/session        -> establishes the session cookie. Call once on load.
+      2. POST /api/chat {message} -> enqueues a message; returns { status: "accepted" } immediately.
+      3. GET  /api/messages       -> returns { messages: [...] } queued since the last poll
+                                     (progress lines and the final answer) and clears them.
+                                     Poll on an interval while the page is open.
+
+    All three rely on the same session cookie, so requests must send cookies (same-origin
+    fetch does this by default).
+  -->
   <script>
+    const POLL_INTERVAL_MS = 1000;
+
     const log = document.getElementById("log");
     const sendBtn = document.getElementById("send");
     const input = document.getElementById("input");
@@ -36,19 +51,25 @@
       log.scrollTop = log.scrollHeight;
     }
 
+    async function poll() {
+      try {
+        const res = await fetch("/api/messages");
+        const { messages } = await res.json();
+        for (const m of messages) append(m, "host");
+      } catch {
+        // transient network error; the next tick retries
+      }
+    }
+
     async function init() {
-      // 1) Establish the session cookie BEFORE anything else, so the POST and the
-      //    socket below resolve to the SAME server-side session.
+      // Establish the session cookie before sending or polling, so every request resolves to
+      // the same server-side session.
       const res = await fetch("/api/session", { method: "POST" });
       const { sessionId } = await res.json();
       append("session: " + sessionId, "sys");
 
-      // 2) Open the socket. The cookie rides along on this same-origin handshake.
-      const proto = location.protocol === "https:" ? "wss" : "ws";
-      const ws = new WebSocket(`${proto}://${location.host}/ws`);
-      ws.onopen    = () => { sendBtn.disabled = false; append("(socket open)", "sys"); };
-      ws.onmessage = (e) => append(e.data, "host");
-      ws.onclose   = () => { sendBtn.disabled = true; append("(socket closed)", "sys"); };
+      // Pull buffered messages on a fixed interval (no WebSocket).
+      setInterval(poll, POLL_INTERVAL_MS);
     }
 
     sendBtn.addEventListener("click", async () => {
@@ -57,8 +78,7 @@
       append(message, "user");
       input.value = "";
 
-      // POST the message; the cookie goes automatically. Quick 200 OK back; the real
-      // answer arrives later over the socket.
+      // The answer arrives later via /api/messages.
       await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },

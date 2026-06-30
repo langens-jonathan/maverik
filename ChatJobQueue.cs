@@ -1,14 +1,13 @@
-﻿using System.Threading.Channels;
+using System.Threading.Channels;
 
 namespace McpHost;
 
-// A thin wrapper over a Channel<ChatJob>. The /api/chat endpoint writes jobs (producer);
-// the ChatWorker reads them (consumer). This is what lets the POST return instantly
-// while the slow LLM work happens elsewhere — and unlike a fire-and-forget Task.Run,
-// the work has a clear owner, a single error-handling site, and a clean shutdown path.
+// A thin wrapper over a Channel<ChatJob>. /api/chat writes jobs (producer); the ChatWorker
+// reads them (consumer), so the POST returns immediately while the slow LLM work happens
+// elsewhere with a clear owner, a single error-handling site, and a clean shutdown path.
 //
-// Unbounded for simplicity. In production you'd use Channel.CreateBounded(...) so a
-// flood of requests applies backpressure instead of growing memory without limit.
+// Unbounded for simplicity; a production host would use Channel.CreateBounded(...) to apply
+// backpressure instead of growing memory without limit.
 public sealed class ChatJobQueue
 {
     private readonly Channel<ChatJob> _channel = Channel.CreateUnbounded<ChatJob>();

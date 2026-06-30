@@ -13,8 +13,6 @@
   <ItemGroup>
     <PackageReference Include="Anthropic" Version="12.31.0" />
     <PackageReference Include="Microsoft.Extensions.AI" Version="10.7.0" />
-    <PackageReference Include="ModelContextProtocol" Version="1.4.0" />
-    <PackageReference Include="OllamaSharp" Version="5.4.25" />
-  </ItemGroup>
+    <PackageReference Include="ModelContextProtocol" Version="1.4.0" />  </ItemGroup>
 
 </Project>

@@ -3,12 +3,11 @@ using ModelContextProtocol.Client;
 namespace McpHost;
 
 // Owns the host's MCP clients (one per server) and the aggregated tool catalog.
-// Connects every configured server once at startup — valid here precisely because
-// all servers use a static credential, so one shared session serves every user.
-// (A server needing per-user auth could NOT be shared this way — the auth model
-// decides the session model.)
+// Connects every configured server once at startup — valid here because all servers use a
+// static credential, so one shared session serves every user. A server needing per-user auth
+// could not be shared this way.
 //
-// Registered as both a singleton (endpoints/worker read the catalog) and a hosted
+// Registered as both a singleton (endpoints and the worker read the catalog) and a hosted
 // service (connect on startup, dispose on shutdown) — the same instance for both.
 public sealed class McpServerRegistry(
     IReadOnlyList<McpServerConfig> configs,
@@ -18,12 +17,11 @@ public sealed class McpServerRegistry(
     private readonly List<McpClientTool> _tools = new();
     private readonly Dictionary<string, IReadOnlyList<McpClientTool>> _toolsByServer = new();
 
-    // Flat tool catalog across all servers — what step 4 hands to the LLM.
+    // Flat tool catalog across all servers — handed to the LLM each turn.
     public IReadOnlyList<McpClientTool> Tools => _tools;
     public IReadOnlyDictionary<string, McpClient> Clients => _clients;
 
-    // The same tools, but kept grouped by the server that contributed them. Useful for
-    // inspection (and the seed for namespacing once two servers can share a tool name).
+    // The same tools grouped by the server that contributed them (used by /api/tools).
     public IReadOnlyDictionary<string, IReadOnlyList<McpClientTool>> ToolsByServer => _toolsByServer;
 
     public async Task StartAsync(CancellationToken ct)

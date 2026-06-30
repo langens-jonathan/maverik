@@ -1,16 +1,15 @@
-﻿using System.Collections.Concurrent;
+using System.Collections.Concurrent;
 using Microsoft.Extensions.AI;
 
 namespace McpHost;
 
-// Holds the running message history per session — this is the "context" the host loop
-// builds on, keyed by the same session id used everywhere else. The LLM is stateless:
-// it keeps no memory between calls, so the host must resend the full history each turn.
-// That history lives here.
+// Per-session message history — the context the host loop builds on, keyed by session id.
+// The LLM is stateless, so the host resends the full history each turn; that history lives
+// here. In-memory and single-instance: porting to a multi-instance host would need a
+// shared/distributed backing.
 //
-// Note: the sequential ChatWorker processes one job at a time, so a given session's
-// list isn't mutated concurrently. If you later parallelize the worker, revisit this
-// (e.g. lock per session, or make the list copy-on-write).
+// The sequential ChatWorker processes one job at a time, so a given session's list is not
+// mutated concurrently.
 public sealed class ConversationStore
 {
     private readonly ConcurrentDictionary<string, List<ChatMessage>> _conversations = new();

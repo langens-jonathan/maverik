@@ -1,19 +1,20 @@
-﻿using Microsoft.Extensions.AI;
+using System.Text.Json;
+using Microsoft.Extensions.AI;
 
 namespace McpHost;
 
-// The host loop. Pulls jobs off the queue, drives the LLM, and — this is the step-4
-// change — when the model asks to call tools, dispatches them to the owning MCP client,
-// feeds the results back, and repeats until the model produces a final answer.
-// Pushes progress + the answer over the WebSocket.
+// The host loop. Pulls jobs off the queue, drives the LLM, and when the model asks to call
+// tools, dispatches them to the owning MCP client, feeds the results back, and repeats until
+// the model produces a final answer. Progress lines and the final answer are written to the
+// session's outbox, where the client picks them up by polling.
 //
-// Note: the chat client is registered WITHOUT .UseFunctionInvocation(), so the model
-// hands us raw FunctionCallContent and we drive the loop ourselves (the whole point of
-// the exercise). Put that middleware back and this loop collapses to a single call.
+// The chat client is registered WITHOUT .UseFunctionInvocation(), so the model hands us raw
+// FunctionCallContent and we drive the tool loop ourselves. Adding that middleware back would
+// collapse this loop to a single call.
 public sealed class ChatWorker(
     ChatJobQueue queue,
     ConversationStore conversations,
-    ChatConnectionRegistry registry,
+    ChatOutbox outbox,
     McpServerRegistry mcp,
     IChatClient chat,
     ILogger<ChatWorker> log) : BackgroundService
@@ -31,7 +32,7 @@ public sealed class ChatWorker(
             catch (Exception ex)
             {
                 log.LogError(ex, "Failed to process job for session {SessionId}", job.SessionId);
-                await registry.SendAsync(job.SessionId, "(error) something went wrong handling that.");
+                outbox.Add(job.SessionId, "(error) something went wrong handling that.");
             }
         }
     }
@@ -41,20 +42,20 @@ public sealed class ChatWorker(
         var history = conversations.GetOrCreate(job.SessionId);
         history.Add(new ChatMessage(ChatRole.User, job.Message));
 
-        // Hand the whole aggregated catalog to the model. McpClientTool : AIFunction,
-        // so these go straight in with no conversion.
+        // Hand the whole aggregated catalog to the model. McpClientTool : AIFunction, so these
+        // go straight in with no conversion.
         var options = new ChatOptions { Tools = [.. mcp.Tools] };
 
         for (var iteration = 0; iteration < MaxIterations; iteration++)
         {
             var response = await chat.GetResponseAsync(history, options, ct);
 
-            // Persist whatever the model produced this round (text and/or tool-call
-            // requests) so the next call sees a coherent history.
+            // Persist whatever the model produced this round (text and/or tool-call requests)
+            // so the next call sees a coherent history.
             history.AddRange(response.Messages);
 
-            // Did it ask to call any tools? Inspecting content is provider-agnostic;
-            // more robust than trusting FinishReason.
+            // Did it ask to call any tools? Inspecting content is provider-agnostic — more
+            // robust than trusting FinishReason.
             var calls = response.Messages
                 .SelectMany(m => m.Contents)
                 .OfType<FunctionCallContent>()
@@ -62,7 +63,7 @@ public sealed class ChatWorker(
 
             if (calls.Count == 0)
             {
-                await registry.SendAsync(job.SessionId, response.Text);   // final answer
+                outbox.Add(job.SessionId, response.Text);   // final answer
                 return;
             }
 
@@ -70,32 +71,25 @@ public sealed class ChatWorker(
             var results = new List<AIContent>();
             foreach (var call in calls)
             {
-                string callArguments = call.Arguments == null ? "no arguments" : "";
-                if(call.Arguments != null)
-                {
-                    foreach(var arg in call.Arguments)
-                    {
-                        callArguments += arg.ToString();
-                    }
-                }    
-                await registry.SendAsync(job.SessionId, $"(calling {call.Name} with arguments {callArguments})");
+                var arguments = call.Arguments is null
+                    ? "no arguments"
+                    : JsonSerializer.Serialize(call.Arguments);
+                outbox.Add(job.SessionId, $"(calling {call.Name} with arguments {arguments})");
                 results.Add(await InvokeToolAsync(call, ct));
             }
 
-            // Feed results back as a tool-role message, then loop so the model can use
-            // them — or call more tools.
+            // Feed results back as a tool-role message, then loop so the model can use them —
+            // or call more tools.
             history.Add(new ChatMessage(ChatRole.Tool, results));
         }
 
-        await registry.SendAsync(job.SessionId, "(stopped: hit the tool-iteration limit.)");
+        outbox.Add(job.SessionId, "(stopped: hit the tool-iteration limit.)");
     }
 
     private async Task<FunctionResultContent> InvokeToolAsync(FunctionCallContent call, CancellationToken ct)
     {
-        // Routing: find which aggregated tool owns this name. Each McpClientTool is bound
-        // to its owning MCP client, so invoking it issues CallToolAsync to the *right*
-        // server under the hood. (One server = no name clashes yet; step 5 adds
-        // namespacing for when two servers can share a tool name.)
+        // Find which aggregated tool owns this name. Each McpClientTool is bound to its owning
+        // MCP client, so invoking it issues CallToolAsync to the right server.
         var tool = mcp.Tools.FirstOrDefault(t => t.Name == call.Name);
         if (tool is null)
             return new FunctionResultContent(call.CallId, $"Error: no tool named '{call.Name}'.");

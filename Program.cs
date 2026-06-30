@@ -5,7 +5,9 @@ using Microsoft.Extensions.AI;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// --- Session (step 1) ---
+// --- Session ---
+// Each browser gets a session cookie; conversation history and the outbox are keyed by the
+// session id.
 builder.Services.AddDistributedMemoryCache();
 builder.Services.AddSession(options =>
 {
@@ -15,25 +17,22 @@ builder.Services.AddSession(options =>
     options.IdleTimeout = TimeSpan.FromHours(2);
 });
 
-// --- WebSocket registry (step 1) ---
-builder.Services.AddSingleton<ChatConnectionRegistry>();
-
-// --- LLM backend (step 2, modified in step 4) ---
-// NOTE: .UseFunctionInvocation() is intentionally REMOVED here. With it, the middleware
-// would auto-resolve tool calls and the ChatWorker loop would never see them. Without
-// it, the model returns raw FunctionCallContent and we drive the tool loop ourselves.
-// Put it back (and simplify ChatWorker.ProcessAsync) to switch to automatic invocation.
+// --- LLM backend ---
+// Registered WITHOUT .UseFunctionInvocation(): the model returns raw FunctionCallContent and
+// the ChatWorker drives the tool loop itself. Adding that middleware back collapses the loop
+// to a single call.
 builder.Services.AddChatClient(_ =>
     new AnthropicClient().AsIChatClient("claude-haiku-4-5"));
 
-// --- Host-loop infrastructure (step 2) ---
+// --- Host-loop infrastructure ---
 builder.Services.AddSingleton<ChatJobQueue>();
 builder.Services.AddSingleton<ConversationStore>();
+builder.Services.AddSingleton<ChatOutbox>();
 builder.Services.AddHostedService<ChatWorker>();
 
-// --- MCP servers (step 3) ---
-// Load the dedicated config file (his preferred shape) and bind it. Case-insensitive
-// so "name" maps to Name, etc. ContentRootPath is the project dir during `dotnet run`.
+// --- MCP servers ---
+// Load mcp-servers.json and bind it (case-insensitive, so "name" maps to Name).
+// ContentRootPath is the project dir during `dotnet run`.
 var mcpConfigPath = Path.Combine(builder.Environment.ContentRootPath, "mcp-servers.json");
 var mcpFile = JsonSerializer.Deserialize<McpServersFile>(
                   File.ReadAllText(mcpConfigPath),
@@ -41,20 +40,24 @@ var mcpFile = JsonSerializer.Deserialize<McpServersFile>(
               ?? new McpServersFile();
 builder.Services.AddSingleton<IReadOnlyList<McpServerConfig>>(mcpFile.Servers);
 
-// The registry is a singleton (so the /api/tools endpoint and, later, the worker can
-// read the catalog) AND a hosted service (so it connects on startup, disposes on
-// shutdown). Register the singleton, then point the hosted service at that same instance.
+// The registry is a singleton (endpoints and the worker read the catalog) AND a hosted
+// service (connect on startup, dispose on shutdown) â€” the same instance for both.
 builder.Services.AddSingleton<McpServerRegistry>();
 builder.Services.AddHostedService(sp => sp.GetRequiredService<McpServerRegistry>());
 
 var app = builder.Build();
 
+// --- Static test front end (NOT ported to the platform) ---
+// Serves wwwroot/index.html as a reference client and local demo. The platform hosts its own
+// front end against the /api endpoints below; this exists only for testing.
 app.UseDefaultFiles();
 app.UseStaticFiles();
-app.UseWebSockets();
+
 app.UseSession();
 
-// Establish the session cookie before the socket opens (step 1).
+// --- API (the backend that ports to the platform) ---
+
+// Establish the session cookie.
 app.MapPost("/api/session", async (HttpContext http) =>
 {
     http.Session.SetString("touched", "1");
@@ -62,7 +65,7 @@ app.MapPost("/api/session", async (HttpContext http) =>
     return Results.Ok(new { sessionId = http.Session.Id });
 });
 
-// Enqueue a job; the ChatWorker pushes the answer over the socket (step 2).
+// Enqueue a job and return immediately; results arrive via polling /api/messages.
 app.MapPost("/api/chat", async (ChatRequest request, HttpContext http, ChatJobQueue queue) =>
 {
     var sessionId = http.Session.Id;
@@ -70,8 +73,12 @@ app.MapPost("/api/chat", async (ChatRequest request, HttpContext http, ChatJobQu
     return Results.Ok(new { status = "accepted" });
 });
 
-// Inspect the aggregated MCP tool catalog in the browser, grouped by server. No LLM
-// involved — this just proves the connections work. Only servers that connected appear.
+// Poll for buffered messages (progress lines and final answers) for this session. Returns
+// and clears whatever is queued; an empty array means nothing new yet.
+app.MapGet("/api/messages", (HttpContext http, ChatOutbox outbox) =>
+    Results.Ok(new { messages = outbox.Drain(http.Session.Id) }));
+
+// Inspect the aggregated MCP tool catalog, grouped by server. No LLM involved.
 app.MapGet("/api/tools", (McpServerRegistry mcp) =>
     Results.Ok(mcp.ToolsByServer.Select(server => new
     {
@@ -79,20 +86,6 @@ app.MapGet("/api/tools", (McpServerRegistry mcp) =>
         toolCount = server.Value.Count,
         tools = server.Value.Select(t => new { t.Name, t.Description })
     })));
-
-// WebSocket endpoint (step 1).
-app.Map("/ws", async (HttpContext http, ChatConnectionRegistry registry) =>
-{
-    if (!http.WebSockets.IsWebSocketRequest)
-    {
-        http.Response.StatusCode = StatusCodes.Status400BadRequest;
-        return;
-    }
-
-    var sessionId = http.Session.Id;
-    using var socket = await http.WebSockets.AcceptWebSocketAsync();
-    await registry.HandleConnectionAsync(sessionId, socket, http.RequestAborted);
-});
 
 app.Run();
 
