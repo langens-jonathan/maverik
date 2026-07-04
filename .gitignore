@@ -1,5 +1,6 @@
-# MCP Host configuration
+# MCP Host configuration (real files hold secrets — commit the .example templates instead)
 mcp-servers.json
+llm-models.json
 
 # Build output
 [Bb]in/

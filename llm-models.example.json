@@ -1,0 +1,28 @@
+{
+  "defaultModelId": "claude-haiku",
+  "models": [
+    {
+      "id": "claude-haiku",
+      "provider": "anthropic",
+      "model": "claude-haiku-4-5",
+      "apiKey": "REPLACE_WITH_YOUR_ANTHROPIC_API_KEY",
+      "supportsTools": true
+    },
+    {
+      "id": "gpt-4o",
+      "provider": "openai-compatible",
+      "model": "gpt-4o",
+      "endpoint": "https://api.openai.com/v1",
+      "apiKey": "REPLACE_WITH_YOUR_OPENAI_API_KEY",
+      "supportsTools": true
+    },
+    {
+      "id": "local-qwen",
+      "provider": "openai-compatible",
+      "model": "qwen3-4b",
+      "endpoint": "http://127.0.0.1:52625/v1",
+      "apiKey": null,
+      "supportsTools": true
+    }
+  ]
+}

@@ -21,8 +21,17 @@ builder.Services.AddSession(options =>
 // Registered WITHOUT .UseFunctionInvocation(): the model returns raw FunctionCallContent and
 // the ChatWorker drives the tool loop itself. Adding that middleware back collapses the loop
 // to a single call.
-builder.Services.AddChatClient(_ =>
-    new AnthropicClient().AsIChatClient("claude-haiku-4-5"));
+var llmModelsConfigPath = Path.Combine(builder.Environment.ContentRootPath, "llm-models.json");
+var llmModelsFile = JsonSerializer.Deserialize<LLMModelsConfig>(
+                  File.ReadAllText(llmModelsConfigPath),
+                  new JsonSerializerOptions { PropertyNameCaseInsensitive = true })
+              ?? new LLMModelsConfig { DefaultModelId = "" };
+builder.Services.AddSingleton<LLMModelRegistry>(sp =>
+    new LLMModelRegistry(
+        llmModelsFile.Models,
+        llmModelsFile.DefaultModelId,
+        sp.GetRequiredService<ILogger<LLMModelRegistry>>()));
+builder.Services.AddChatClient(sp => sp.GetRequiredService<LLMModelRegistry>().Client);
 
 // --- Host-loop infrastructure ---
 builder.Services.AddSingleton<ChatJobQueue>();
