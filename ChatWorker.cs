@@ -39,6 +39,10 @@ public sealed class ChatWorker(
 
     private async Task ProcessAsync(ChatJob job, CancellationToken ct)
     {
+        // Tag every raw HTTP call this turn makes to the LLM with the owning session, so the
+        // wire-logging handler can route it to logs/{sessionId}.log.
+        LlmLogContext.SessionId = job.SessionId;
+
         var history = conversations.GetOrCreate(job.SessionId);
         history.Add(new ChatMessage(ChatRole.User, job.Message));
 

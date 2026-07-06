@@ -1,3 +1,4 @@
+using System.Net;
 using System.Text.Json;
 using Anthropic;
 using McpHost;
@@ -26,11 +27,32 @@ var llmModelsFile = JsonSerializer.Deserialize<LLMModelsConfig>(
                   File.ReadAllText(llmModelsConfigPath),
                   new JsonSerializerOptions { PropertyNameCaseInsensitive = true })
               ?? new LLMModelsConfig { DefaultModelId = "" };
+// Wire-level LLM debug logging. When MCPHOST_LLM_DEBUG is truthy, a DelegatingHandler is
+// injected into the provider clients that logs every raw HTTP request/response (per session)
+// to logs/{sessionId}.log and the ILogger. Off by default — zero overhead, clients built as
+// before.
+var llmDebugEnv = Environment.GetEnvironmentVariable("MCPHOST_LLM_DEBUG");
+var llmDebug = llmDebugEnv == "1" || string.Equals(llmDebugEnv, "true", StringComparison.OrdinalIgnoreCase);
+var llmLogDir = Path.Combine(builder.Environment.ContentRootPath, "logs");
+if (llmDebug) Directory.CreateDirectory(llmLogDir);
+
 builder.Services.AddSingleton<LLMModelRegistry>(sp =>
-    new LLMModelRegistry(
+{
+    HttpClient? loggingHttp = null;
+    if (llmDebug)
+    {
+        var wireLog = sp.GetRequiredService<ILoggerFactory>().CreateLogger("LlmWire");
+        loggingHttp = new HttpClient(new LlmLoggingHandler(wireLog, llmLogDir)
+        {
+            InnerHandler = new HttpClientHandler { AutomaticDecompression = DecompressionMethods.All }
+        });
+    }
+    return new LLMModelRegistry(
         llmModelsFile.Models,
         llmModelsFile.DefaultModelId,
-        sp.GetRequiredService<ILogger<LLMModelRegistry>>()));
+        sp.GetRequiredService<ILogger<LLMModelRegistry>>(),
+        loggingHttp);
+});
 builder.Services.AddChatClient(sp => sp.GetRequiredService<LLMModelRegistry>().Client);
 
 // --- Host-loop infrastructure ---

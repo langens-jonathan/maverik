@@ -2,6 +2,9 @@
 mcp-servers.json
 llm-models.json
 
+# Per-session LLM wire logs (MCPHOST_LLM_DEBUG)
+logs/
+
 # Build output
 [Bb]in/
 [Oo]bj/

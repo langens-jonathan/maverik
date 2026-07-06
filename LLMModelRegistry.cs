@@ -3,16 +3,22 @@ using Anthropic.Core;
 using Microsoft.Extensions.AI;
 using OpenAI;
 using System.ClientModel;
+using System.ClientModel.Primitives;
 
 namespace McpHost;
 
 public sealed class LLMModelRegistry(
     IReadOnlyList<LLMModelConfig> configs, string defaultModel,
-    ILogger<LLMModelRegistry> log) : IDisposable
+    ILogger<LLMModelRegistry> log,
+    HttpClient? loggingHttpClient = null) : IDisposable
 {
     private readonly Dictionary<string, IChatClient> _clients = new();
     private bool _loaded = false;
     private readonly string _defaultModel = defaultModel;
+
+    // When non-null (MCPHOST_LLM_DEBUG on), this HttpClient carries the wire-logging handler
+    // and is injected into every provider client. Null in normal operation.
+    private readonly HttpClient? _http = loggingHttpClient;
 
     public IChatClient Client { get
         {
@@ -29,13 +35,25 @@ public sealed class LLMModelRegistry(
     {
         if(config.Provider == "anthropic")
         {
-            if (config.ApiKey != null)
+            // Normal path unchanged. Only when wire logging is on do we route through
+            // ClientOptions so the logging HttpClient can be injected; with ApiKey null we then
+            // rely on ClientOptions reading the key from the environment, as the parameterless
+            // AnthropicClient() does.
+            if (_http == null)
             {
-                ClientOptions co = new ClientOptions();
-                co.ApiKey = config.ApiKey;
-                return new AnthropicClient(co).AsIChatClient(config.Model);
+                if (config.ApiKey != null)
+                {
+                    ClientOptions co = new ClientOptions();
+                    co.ApiKey = config.ApiKey;
+                    return new AnthropicClient(co).AsIChatClient(config.Model);
+                }
+                return new AnthropicClient().AsIChatClient(config.Model); // this case supports using the APIKey from the environment variable (default anthropic implementation)
             }
-            return new AnthropicClient().AsIChatClient(config.Model); // this case supports using the APIKey from the environment variable (default anthropic implementation)
+
+            ClientOptions coDebug = new ClientOptions();
+            if (config.ApiKey != null) coDebug.ApiKey = config.ApiKey;
+            coDebug.HttpClient = _http;
+            return new AnthropicClient(coDebug).AsIChatClient(config.Model);
         }
 
         if(config.Endpoint == null)
@@ -44,6 +62,7 @@ public sealed class LLMModelRegistry(
         }
 
         OpenAIClientOptions options = new OpenAIClientOptions { Endpoint = new Uri(config.Endpoint) };
+        if (_http != null) options.Transport = new HttpClientPipelineTransport(_http);
         ApiKeyCredential credential = new ApiKeyCredential(config.ApiKey == null ? "none" : config.ApiKey);
         return new OpenAIClient(credential, options).GetChatClient(config.Model).AsIChatClient();
     }
@@ -76,5 +95,6 @@ public sealed class LLMModelRegistry(
         {
                 client.Dispose();
         }
+        _http?.Dispose();
     }
 }
