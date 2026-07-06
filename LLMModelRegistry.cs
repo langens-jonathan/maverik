@@ -20,15 +20,32 @@ public sealed class LLMModelRegistry(
     // and is injected into every provider client. Null in normal operation.
     private readonly HttpClient? _http = loggingHttpClient;
 
-    public IChatClient Client { get
+    // The default model's client. Kept for existing callers (e.g. AddChatClient in Program.cs);
+    // it now just resolves the configured default id.
+    public IChatClient Client => Resolve(_defaultModel);
+
+    // Return the IChatClient for a specific model id. A null/empty id yields the default (the
+    // configured default id, or the first loaded model when no default is set). An unknown id
+    // throws — a wrong model id (e.g. from an agent's `model`) should fail loudly, not silently
+    // fall back.
+    public IChatClient Resolve(string? id)
+    {
+        if (!_loaded) loadClients();
+
+        if (string.IsNullOrEmpty(id))
         {
-            if (!_loaded) loadClients();
-            if (string.IsNullOrEmpty(_defaultModel))
-            {
-                return (_clients.Values.FirstOrDefault());
-            }
-            return _clients.GetValueOrDefault(_defaultModel);
+            var fallback = _clients.Values.FirstOrDefault();
+            if (fallback is null)
+                throw new InvalidOperationException("No LLM models are configured in llm-models.json.");
+            return fallback;
         }
+
+        if (_clients.TryGetValue(id, out var client))
+            return client;
+
+        log.LogError("No LLM model with id '{Id}'. Available: {Ids}", id, string.Join(", ", _clients.Keys));
+        throw new InvalidOperationException(
+            $"No LLM model with id '{id}' — check llm-models.json or the agent's model.");
     }
 
     private IChatClient createClient(LLMModelConfig config)
