@@ -1,0 +1,12 @@
+{
+  "defaultAgent": "coding-expert",
+  "agents": [
+    {
+      "id": "coding-expert",
+      "name": "Coding Expert",
+      "model": "claude-haiku",
+      "mcpServers": ["github", "context7", "microsoft-learn"],
+      "maxIterations": 8
+    }
+  ]
+}

@@ -20,8 +20,8 @@ public sealed class LLMModelRegistry(
     // and is injected into every provider client. Null in normal operation.
     private readonly HttpClient? _http = loggingHttpClient;
 
-    // The default model's client. Kept for existing callers (e.g. AddChatClient in Program.cs);
-    // it now just resolves the configured default id.
+    // Convenience accessor for the default model's client (resolves the configured default id).
+    // The primary API is Resolve(id); callers that need a specific model use that.
     public IChatClient Client => Resolve(_defaultModel);
 
     // Return the IChatClient for a specific model id. A null/empty id yields the default (the

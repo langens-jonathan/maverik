@@ -53,8 +53,6 @@ builder.Services.AddSingleton<LLMModelRegistry>(sp =>
         sp.GetRequiredService<ILogger<LLMModelRegistry>>(),
         loggingHttp);
 });
-builder.Services.AddChatClient(sp => sp.GetRequiredService<LLMModelRegistry>().Client);
-
 // --- Host-loop infrastructure ---
 builder.Services.AddSingleton<ChatJobQueue>();
 builder.Services.AddSingleton<ConversationStore>();
@@ -76,7 +74,26 @@ builder.Services.AddSingleton<IReadOnlyList<McpServerConfig>>(mcpFile.Servers);
 builder.Services.AddSingleton<McpServerRegistry>();
 builder.Services.AddHostedService(sp => sp.GetRequiredService<McpServerRegistry>());
 
+// --- Agents ---
+// Load agents.json the same way as mcp-servers.json. AgentRegistry needs ContentRootPath so it can
+// find each agent's prompt file (prompts/agent/<id>.md) when the prompt isn't inline.
+var agentsConfigPath = Path.Combine(builder.Environment.ContentRootPath, "agents.json");
+var agentsFile = JsonSerializer.Deserialize<AgentsFile>(
+                     File.ReadAllText(agentsConfigPath),
+                     new JsonSerializerOptions { PropertyNameCaseInsensitive = true })
+                 ?? new AgentsFile();
+builder.Services.AddSingleton<AgentRegistry>(sp =>
+    new AgentRegistry(
+        agentsFile,
+        builder.Environment.ContentRootPath,
+        sp.GetRequiredService<ILogger<AgentRegistry>>()));
+
 var app = builder.Build();
+
+// Build the agent registry eagerly so agents.json and the prompt files are validated at startup
+// (fail fast) with a clear error, rather than surfacing lazily. (ChatWorker depends on it too, so
+// it would be constructed at startup regardless; this just makes the intent explicit.)
+app.Services.GetRequiredService<AgentRegistry>();
 
 // --- Static test front end (NOT ported to the platform) ---
 // Serves wwwroot/index.html as a reference client and local demo. The platform hosts its own
@@ -97,10 +114,12 @@ app.MapPost("/api/session", async (HttpContext http) =>
 });
 
 // Enqueue a job and return immediately; results arrive via polling /api/messages.
-app.MapPost("/api/chat", async (ChatRequest request, HttpContext http, ChatJobQueue queue) =>
+app.MapPost("/api/chat", async (ChatRequest request, HttpContext http, ChatJobQueue queue, AgentRegistry agents) =>
 {
     var sessionId = http.Session.Id;
-    await queue.EnqueueAsync(new ChatJob(sessionId, request.Message));
+    // Use the requested agent, or the configured default when none is given.
+    var agentId = string.IsNullOrWhiteSpace(request.Agent) ? agents.DefaultAgent : request.Agent;
+    await queue.EnqueueAsync(new ChatJob(sessionId, request.Message, agentId));
     return Results.Ok(new { status = "accepted" });
 });
 
@@ -118,6 +137,15 @@ app.MapGet("/api/tools", (McpServerRegistry mcp) =>
         tools = server.Value.Select(t => new { t.Name, t.Description })
     })));
 
+// List the configured agents so a UI can offer a picker. Deliberately excludes the (potentially
+// large) system prompt — id/name/model/servers are enough to choose one.
+app.MapGet("/api/agents", (AgentRegistry agents) =>
+    Results.Ok(new
+    {
+        defaultAgent = agents.DefaultAgent,
+        agents = agents.Agents.Select(a => new { a.Id, a.Name, a.Model, a.McpServers })
+    }));
+
 app.Run();
 
-public record ChatRequest(string Message);
+public record ChatRequest(string Message, string? Agent = null);

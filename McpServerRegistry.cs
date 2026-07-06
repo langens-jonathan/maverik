@@ -24,6 +24,22 @@ public sealed class McpServerRegistry(
     // The same tools grouped by the server that contributed them (used by /api/tools).
     public IReadOnlyDictionary<string, IReadOnlyList<McpClientTool>> ToolsByServer => _toolsByServer;
 
+    // The tools contributed by just the named servers — an agent's allowed subset, filtered from
+    // the already-connected catalog (no reconnect). Unknown names are skipped with a warning so a
+    // typo in agents.json doesn't crash the loop.
+    public IReadOnlyList<McpClientTool> ToolsForServers(IEnumerable<string> serverNames)
+    {
+        var tools = new List<McpClientTool>();
+        foreach (var name in serverNames)
+        {
+            if (_toolsByServer.TryGetValue(name, out var serverTools))
+                tools.AddRange(serverTools);
+            else
+                log.LogWarning("Agent references unknown MCP server '{Name}'; skipping.", name);
+        }
+        return tools;
+    }
+
     public async Task StartAsync(CancellationToken ct)
     {
         foreach (var config in configs)

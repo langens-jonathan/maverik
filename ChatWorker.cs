@@ -16,11 +16,10 @@ public sealed class ChatWorker(
     ConversationStore conversations,
     ChatOutbox outbox,
     McpServerRegistry mcp,
-    IChatClient chat,
+    LLMModelRegistry models,
+    AgentRegistry agents,
     ILogger<ChatWorker> log) : BackgroundService
 {
-    private const int MaxIterations = 8;
-
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         await foreach (var job in queue.ReadAllAsync(stoppingToken))
@@ -43,14 +42,19 @@ public sealed class ChatWorker(
         // wire-logging handler can route it to logs/{sessionId}.log.
         LlmLogContext.SessionId = job.SessionId;
 
-        var history = conversations.GetOrCreate(job.SessionId);
+        // Everything the turn needs comes from the agent: model, prompt, allowed tools, loop cap.
+        // Resolve throws on an unknown agent/model id — caught by ExecuteAsync's try/catch.
+        var agent = agents.Resolve(job.AgentId);
+        var chat = models.Resolve(agent.Model);
+
+        var history = conversations.GetOrCreate(job.SessionId, agent.SystemPrompt!);
         history.Add(new ChatMessage(ChatRole.User, job.Message));
 
-        // Hand the whole aggregated catalog to the model. McpClientTool : AIFunction, so these
-        // go straight in with no conversion.
-        var options = new ChatOptions { Tools = [.. mcp.Tools] };
+        // Hand the model only the tools from the servers this agent may use (filtered from the
+        // already-connected catalog). McpClientTool : AIFunction, so these go straight in.
+        var options = new ChatOptions { Tools = [.. mcp.ToolsForServers(agent.McpServers)] };
 
-        for (var iteration = 0; iteration < MaxIterations; iteration++)
+        for (var iteration = 0; iteration < agent.MaxIterations; iteration++)
         {
             var response = await chat.GetResponseAsync(history, options, ct);
 

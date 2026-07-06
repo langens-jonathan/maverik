@@ -14,9 +14,12 @@ public sealed class ConversationStore
 {
     private readonly ConcurrentDictionary<string, List<ChatMessage>> _conversations = new();
 
-    public List<ChatMessage> GetOrCreate(string sessionId) =>
+    // Returns the session's history, creating it seeded with the given system prompt (the agent's)
+    // on first use. The prompt only applies at creation — a later call with a different prompt is
+    // ignored for an existing session (agents don't switch mid-session yet).
+    public List<ChatMessage> GetOrCreate(string sessionId, string systemPrompt) =>
         _conversations.GetOrAdd(sessionId, _ => new List<ChatMessage>
         {
-            new(ChatRole.System, "You are a helpful assistant running inside an MCP host.")
+            new(ChatRole.System, systemPrompt)
         });
 }
