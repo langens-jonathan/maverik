@@ -5,6 +5,9 @@ llm-models.json
 # Per-session LLM wire logs (MCPHOST_LLM_DEBUG)
 logs/
 
+# MAVERIK benchmark output (results/{runId}/run.json + summary.csv)
+results/
+
 # Build output
 [Bb]in/
 [Oo]bj/

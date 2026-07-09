@@ -104,6 +104,16 @@ builder.Services.AddSingleton<MaverikSuiteRegistry>(sp => new MaverikSuiteRegist
 // Judges MAVERIK answers (deterministic checks + llm-judge). Stateless; used by the runner.
 builder.Services.AddSingleton<CriterionEvaluator>();
 
+// --- MAVERIK runner pipeline ---
+// Mirrors the chat pipeline (queue → background worker → store polled by endpoints), but as
+// its OWN worker so a long benchmark run never blocks interactive chat.
+builder.Services.AddSingleton<MaverikRunQueue>();
+builder.Services.AddSingleton<MaverikRunStore>();
+builder.Services.AddSingleton<MaverikResultsWriter>(sp => new MaverikResultsWriter(
+    builder.Environment.ContentRootPath,
+    sp.GetRequiredService<ILogger<MaverikResultsWriter>>()));
+builder.Services.AddHostedService<MaverikRunner>();
+
 var app = builder.Build();
 
 // Build the agent registry eagerly so agents.json and the prompt files are validated at startup
@@ -179,6 +189,70 @@ app.MapGet("/api/maverik/suites", (MaverikSuiteRegistry suites) =>
         questionCount = s.Questions.Count
     })));
 
+// Start a benchmark run. All ids are validated HERE so mistakes fail at request time with a
+// 400, not mid-run; the runner can then assume a well-formed request. Returns { runId }
+// immediately — results arrive by polling the endpoints below.
+app.MapPost("/api/maverik/runs", async (
+    StartRunRequest request, MaverikSuiteRegistry suites, AgentRegistry agents,
+    MaverikRunStore store, MaverikRunQueue queue) =>
+{
+    MaverikSuite suite;
+    try { suite = suites.Resolve(request.SuiteId ?? ""); }
+    catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+
+    // The request's agent list wins; otherwise the suite's default set.
+    var agentIds = request.AgentIds is { Count: > 0 } ? request.AgentIds : suite.Agents;
+    if (agentIds.Count == 0)
+        return Results.BadRequest(new { error = $"Suite '{suite.Id}' has no default agents; pass agentIds." });
+    foreach (var agentId in agentIds)
+    {
+        try { agents.Resolve(agentId); }
+        catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
+    }
+
+    var repetitions = request.Repetitions ?? 1;
+    if (repetitions < 1)
+        return Results.BadRequest(new { error = "repetitions must be >= 1." });
+
+    // Readable-unique id; the suffix guards against two runs started within the same second.
+    var runId = $"{suite.Id}-{DateTimeOffset.UtcNow:yyyyMMdd-HHmmss}";
+    while (store.Get(runId) is not null)
+        runId += "x";
+
+    store.Set(new RunStatus(
+        runId, suite.Id, agentIds, repetitions,
+        State: "queued",
+        TotalCases: agentIds.Count * suite.Questions.Count * repetitions,
+        CompletedCases: 0,
+        CreatedAt: DateTimeOffset.UtcNow,
+        StartedAt: null, FinishedAt: null,
+        Results: []));
+
+    await queue.EnqueueAsync(new RunRequest(runId, suite.Id, agentIds, repetitions));
+    return Results.Ok(new { runId });
+});
+
+// List all runs, newest first — id, state, and progress; details live one level deeper.
+app.MapGet("/api/maverik/runs", (MaverikRunStore store) =>
+    Results.Ok(store.All().Select(r => new
+    {
+        r.RunId,
+        r.SuiteId,
+        r.State,
+        r.CompletedCases,
+        r.TotalCases,
+        r.CreatedAt,
+        r.StartedAt,
+        r.FinishedAt
+    })));
+
+// Full status of one run, per-case results included — poll this while the run executes.
+app.MapGet("/api/maverik/runs/{runId}", (string runId, MaverikRunStore store) =>
+    store.Get(runId) is { } run ? Results.Ok(run) : Results.NotFound(new { error = $"No run '{runId}'." }));
+
 app.Run();
 
 public record ChatRequest(string Message, string? Agent = null);
+
+// Body of POST /api/maverik/runs. AgentIds defaults to the suite's list, Repetitions to 1.
+public record StartRunRequest(string? SuiteId, List<string>? AgentIds = null, int? Repetitions = null);
