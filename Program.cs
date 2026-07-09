@@ -101,6 +101,9 @@ builder.Services.AddSingleton<MaverikSuiteRegistry>(sp => new MaverikSuiteRegist
     sp.GetRequiredService<LLMModelRegistry>(),
     sp.GetRequiredService<ILogger<MaverikSuiteRegistry>>()));
 
+// Judges MAVERIK answers (deterministic checks + llm-judge). Stateless; used by the runner.
+builder.Services.AddSingleton<CriterionEvaluator>();
+
 var app = builder.Build();
 
 // Build the agent registry eagerly so agents.json and the prompt files are validated at startup
