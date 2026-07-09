@@ -15,8 +15,17 @@ public sealed class AgentConfig
     public string Id { get; set; } = "";
     public string Name { get; set; } = "";
 
+    // What this configuration is for — shown by /api/agents so runs and pickers can explain
+    // themselves (e.g. "Tighter prompt; should reduce tool-call count.").
+    public string Description { get; set; } = "";
+
     // A model id from llm-models.json (resolved via LLMModelRegistry.Resolve).
     public string Model { get; set; } = "";
+
+    // Which host-loop strategy drives this agent's tool loop (resolved via
+    // LoopStrategyRegistry once that exists): "manual" (sequential tool calls, the classic
+    // loop) or "parallel-tools" (same loop, same-turn tool calls run concurrently).
+    public string LoopType { get; set; } = "manual";
 
     // Optional priming prompt. When null/empty, AgentRegistry loads it from prompts/agent/<id>.md
     // instead — inline wins when present. AgentRegistry assigns the resolved text back here at load

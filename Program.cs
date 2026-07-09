@@ -143,7 +143,7 @@ app.MapGet("/api/agents", (AgentRegistry agents) =>
     Results.Ok(new
     {
         defaultAgent = agents.DefaultAgent,
-        agents = agents.Agents.Select(a => new { a.Id, a.Name, a.Model, a.McpServers })
+        agents = agents.Agents.Select(a => new { a.Id, a.Name, a.Description, a.Model, a.LoopType, a.McpServers })
     }));
 
 app.Run();
