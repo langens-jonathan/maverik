@@ -54,6 +54,9 @@ builder.Services.AddSingleton<LLMModelRegistry>(sp =>
         loggingHttp);
 });
 // --- Host-loop infrastructure ---
+// The loop strategies ("manual", "parallel-tools") are shared by ChatWorker and the MAVERIK
+// benchmark runner — both must execute the same loop code.
+builder.Services.AddSingleton<LoopStrategyRegistry>();
 builder.Services.AddSingleton<ChatJobQueue>();
 builder.Services.AddSingleton<ConversationStore>();
 builder.Services.AddSingleton<ChatOutbox>();
