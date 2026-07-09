@@ -1,0 +1,27 @@
+{
+  "id": "smoke",
+  "name": "Smoke tests",
+  "description": "Minimal end-to-end checks that exercise every part of the MAVERIK pipeline: a tool-using question with a deterministic criterion, and an LLM-judged question.",
+  "agents": [ "coding-expert" ],
+  "judgeModel": "claude-haiku",
+  "questions": [
+    {
+      "id": "background-service",
+      "text": "Use the Microsoft docs to check: what base class do you inherit from in .NET to implement a long-running hosted background task? Answer with just the class name.",
+      "criterion": { "type": "contains", "expected": "BackgroundService" }
+    },
+    {
+      "id": "hosted-service-interface",
+      "text": "According to the Microsoft docs, which interface does a .NET hosted service implement? Answer with just the interface name.",
+      "criterion": { "type": "regex", "pattern": "IHostedService" }
+    },
+    {
+      "id": "minimal-api-judged",
+      "text": "In one or two sentences, what is an ASP.NET Core minimal API?",
+      "criterion": {
+        "type": "llm-judge",
+        "rubric": "PASS if the answer describes defining HTTP endpoints/APIs with minimal code and without controllers. FAIL otherwise."
+      }
+    }
+  ]
+}

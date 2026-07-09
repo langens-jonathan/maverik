@@ -91,12 +91,26 @@ builder.Services.AddSingleton<AgentRegistry>(sp =>
         builder.Environment.ContentRootPath,
         sp.GetRequiredService<ILogger<AgentRegistry>>()));
 
+// --- MAVERIK test suites ---
+// One file per suite under maverik-suites/. Loaded and validated at startup; a missing folder
+// just means zero suites. AgentRegistry/LLMModelRegistry are injected so agent ids and judge
+// model ids in suite files are validated against the real configuration.
+builder.Services.AddSingleton<MaverikSuiteRegistry>(sp => new MaverikSuiteRegistry(
+    builder.Environment.ContentRootPath,
+    sp.GetRequiredService<AgentRegistry>(),
+    sp.GetRequiredService<LLMModelRegistry>(),
+    sp.GetRequiredService<ILogger<MaverikSuiteRegistry>>()));
+
 var app = builder.Build();
 
 // Build the agent registry eagerly so agents.json and the prompt files are validated at startup
 // (fail fast) with a clear error, rather than surfacing lazily. (ChatWorker depends on it too, so
 // it would be constructed at startup regardless; this just makes the intent explicit.)
 app.Services.GetRequiredService<AgentRegistry>();
+
+// Same fail-fast treatment for the MAVERIK suites: nothing else depends on the registry at
+// startup, so without this a broken suite file would only surface on first use.
+app.Services.GetRequiredService<MaverikSuiteRegistry>();
 
 // --- Static test front end (NOT ported to the platform) ---
 // Serves wwwroot/index.html as a reference client and local demo. The platform hosts its own
@@ -148,6 +162,19 @@ app.MapGet("/api/agents", (AgentRegistry agents) =>
         defaultAgent = agents.DefaultAgent,
         agents = agents.Agents.Select(a => new { a.Id, a.Name, a.Description, a.Model, a.LoopType, a.McpServers })
     }));
+
+// List the loaded MAVERIK suites so a client can pick one to run. Question texts/criteria are
+// deliberately summarized to a count — the run results are where answers live.
+app.MapGet("/api/maverik/suites", (MaverikSuiteRegistry suites) =>
+    Results.Ok(suites.Suites.Select(s => new
+    {
+        s.Id,
+        s.Name,
+        s.Description,
+        s.Agents,
+        s.JudgeModel,
+        questionCount = s.Questions.Count
+    })));
 
 app.Run();
 
