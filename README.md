@@ -381,4 +381,4 @@ standard. So the *ck* had to go. **MAVERIK** — almost a maverick, but standard
 
 ## 📄 License
 
-License to be determined — until a `LICENSE` file lands, all rights reserved.
+Apache 2.0 License.
