@@ -28,10 +28,24 @@
 
 ## What is MAVERIK?
 
-MAVERIK is a testing framework for **MCP agents**. You define *Agent Configurations* —
-a system prompt, an LLM model, a set of MCP servers, a tool-loop strategy, and an iteration
-cap — and *Test Suites* of questions with pass criteria. MAVERIK then fires every question
-at every agent configuration and measures what actually matters:
+JMeter exists because "is my system fast enough?" is a question you answer by measuring, not
+guessing — you define a test plan, throw load at your system, and read off the numbers that
+tell you whether a change made things better or worse. MAVERIK applies the same idea to MCP
+agents: instead of a system's throughput and latency under load, you're measuring an *agent
+configuration's* correctness, speed, and cost as you tweak it.
+
+An agent configuration has a set of **tunable parameters** — the system prompt, the LLM
+model, which MCP servers/tools it can reach, the tool-loop strategy, the iteration cap, and
+(down the road) context-reduction strategies — and a set of **outcome parameters** you judge
+it on: whether it reaches an acceptable answer, how long that takes, how many input/output
+tokens it burns, and which tools it reaches for (some are far more expensive to call than
+others). The MAVERIK workflow is to model the outcome parameters *first* — what counts as a
+correct answer, what latency and token budget is acceptable, which tools are "free" and which
+should be used sparingly — and only then sweep the tunable parameters and compare.
+
+Concretely: you define *Agent Configurations* (system prompt, model, MCP servers, loop
+strategy, iteration cap) and *Test Suites* of questions with pass criteria. MAVERIK fires
+every question at every agent configuration and records:
 
 | | |
 | --- | --- |
@@ -46,6 +60,39 @@ So instead of guessing, you can *measure* questions like:
 - Is Claude Haiku good enough for this scenario, or do I need Sonnet?
 - Does running tool calls in parallel actually make my agent faster?
 - What will 10,000 of these questions cost at customer X?
+
+## 🤖 What is an agent?
+
+If you're new to the term: an **LLM agent** is a language model wired up to a loop and a set
+of tools. On its own, an LLM just turns text into text — it can't look anything up or take
+action. Give it a set of tools (functions it can call — read a file, hit an API, query a
+database) and a loop that feeds each tool's result back to it, and it can work multi-step
+problems: decide it needs information, call a tool, read what came back, decide whether
+that's enough or it needs another tool, and eventually answer. That loop — *call a tool or
+answer, repeat until done* — is what makes something an agent rather than a one-shot
+completion.
+
+MAVERIK's MCP host implements exactly that loop (see `ChatWorker.cs` / `ILoopStrategy`), and
+the tools it hands the model come from one or more **MCP servers** — servers exposing typed,
+discoverable functions over the [Model Context Protocol](https://modelcontextprotocol.io).
+
+MAVERIK's specific definition of "agent" is an **Agent Configuration** — the `AgentConfig`
+object defined in `agents.json`. It's a named bundle of everything that determines how the
+loop behaves for a given use case:
+
+| Field | Meaning |
+| --- | --- |
+| `systemPrompt` | how the agent is primed/instructed (inline or `prompts/agent/<id>.md`) |
+| `model` | which LLM answers, from `llm-models.json` |
+| `mcpServers` | which MCP servers' tools it's allowed to reach for |
+| `loopType` | which `ILoopStrategy` drives its tool loop (`manual`, `parallel-tools`, ...) |
+| `maxIterations` | how many LLM round-trips it gets before MAVERIK gives up on it |
+
+The important part: **an agent is data, not code.** Two agents that differ only in their
+system prompt, or only in their model, are two entries in `agents.json` — not two
+codebases. That's what makes A/B testing possible: point the same test suite at, say,
+`github-helper` and `github-helper-v2-prompt`, and any difference in the results is
+attributable to the one thing you changed.
 
 ## ✨ Features
 
@@ -352,6 +399,52 @@ A minimal reference client lives under `wwwroot/` — open `http://localhost:508
 Set `MCPHOST_LLM_DEBUG=1` and every raw LLM HTTP exchange — agent *and* judge traffic —
 is written to `logs/{sessionId|runId}.log` with method, endpoint, full bodies, round-trip
 time, and token usage. Off by default with zero overhead.
+
+## 🎛️ The JMeter analogy, fleshed out
+
+JMeter's core idea is a feedback loop: define what you're testing, run it, read the numbers,
+adjust, run again. MAVERIK runs the same loop, just aimed at agent configurations instead of
+HTTP endpoints.
+
+| JMeter concept | MAVERIK equivalent |
+| --- | --- |
+| Test plan | Test suite (`maverik-suites/*.json`) |
+| Sampler (one request) | Question (one prompt + criterion) |
+| Assertion | Criterion (`exact` / `contains` / `regex` / `llm-judge`) |
+| Thread group / loop count | `repetitions` — run the same case N times to see through LLM nondeterminism |
+| Target under test | Agent configuration (`agents.json`) |
+| Listener / results table | `GET /api/maverik/runs/{id}` + `results/{runId}/summary.csv` |
+
+### Two kinds of parameters
+
+**Tunable parameters** — the levers you pull between runs:
+
+- `systemPrompt` — how the agent is instructed
+- `model` — which LLM answers, and at what price
+- `mcpServers` — which tools it's allowed to reach for
+- `loopType` — how it drives the tool-call loop (sequential vs. parallel tool calls today;
+  more strategies land as `ILoopStrategy` implementations)
+- `maxIterations` — how much rope it gets before MAVERIK calls it a failure
+- the question wording itself, if you're testing prompt phrasing rather than the agent
+- context-reduction strategies (summarizing/trimming history as it grows) — a natural future
+  lever, not yet implemented
+
+**Outcome parameters** — what you judge a configuration on, captured per case:
+
+- correctness (`passed`, via the case's criterion)
+- speed (`durationMs` — the full turn, LLM and tool time both)
+- cost (`inputTokens` / `outputTokens`, and `estCostPerQuestion` when the model has pricing)
+- tool usage (`toolCallCount` / `toolNames` — some tools are far cheaper to call than others,
+  so *which* tools an agent reaches for is itself a signal, not just how many)
+
+### The workflow
+
+The order matters. **Model the outcome parameters first**: write down what a correct answer
+looks like (the criterion), what latency is acceptable, what token budget you're willing to
+spend, and which tools are "free" versus ones you want the agent to avoid unless necessary.
+Only once that's pinned down do you sweep the tunable parameters — try a tighter system
+prompt, a cheaper model, a parallel-tools loop — and let MAVERIK tell you, in the same units
+you defined up front, whether the change actually helped or just moved the cost around.
 
 ## 🗺️ Roadmap
 
