@@ -5,7 +5,7 @@
       "id": "claude-haiku",
       "provider": "anthropic",
       "model": "claude-haiku-4-5",
-      "apiKey": "REPLACE_WITH_YOUR_ANTHROPIC_API_KEY",
+      "apiKey": "${ANTHROPIC_API_KEY}",
       "supportsTools": true
     },
     {
@@ -13,7 +13,7 @@
       "provider": "openai-compatible",
       "model": "gpt-4o",
       "endpoint": "https://api.openai.com/v1",
-      "apiKey": "REPLACE_WITH_YOUR_OPENAI_API_KEY",
+      "apiKey": "${OPENAI_API_KEY}",
       "supportsTools": true
     },
     {

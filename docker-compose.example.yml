@@ -11,10 +11,11 @@ services:
     build: .
     ports:
       - "5088:8080"                       # host:container — keeps the familiar local URL
-    environment:
-      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
-      - GITHUB_MCP_PAT=${GITHUB_MCP_PAT}  # any ${ENV_VAR} used in mcp-servers.json headers
-      # - MCPHOST_LLM_DEBUG=1             # opt-in wire logging -> logs/{sessionId|runId}.log
+    env_file:
+      - .env   # copy .env.example -> .env and fill in real values. Every name defined there
+               # is loaded straight into the container's environment, so anything you reference
+               # as "${VAR_NAME}" in mcp-servers.json headers or llm-models.json's apiKey
+               # resolves against it — add new variables there, no compose-file edits needed.
     volumes:
       # Config: mounted read-only, never baked into the image.
       - ./llm-models.json:/app/llm-models.json:ro

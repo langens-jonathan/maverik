@@ -4,6 +4,7 @@ using Microsoft.Extensions.AI;
 using OpenAI;
 using System.ClientModel;
 using System.ClientModel.Primitives;
+using McpHost.Config;
 
 namespace McpHost.LlmModel;
 
@@ -50,6 +51,11 @@ public sealed class LLMModelRegistry(
 
     private IChatClient createClient(LLMModelConfig config)
     {
+        // ${ENV_VAR} in apiKey (e.g. "${ANTHROPIC_API_KEY}") resolves against the environment
+        // here — same construct and same shared expander as mcp-servers.json headers, so
+        // secrets never have to live in the committed config file.
+        var apiKey = EnvExpansion.ExpandNullable(config.ApiKey);
+
         if(config.Provider == "anthropic")
         {
             // Normal path unchanged. Only when wire logging is on do we route through
@@ -58,17 +64,17 @@ public sealed class LLMModelRegistry(
             // AnthropicClient() does.
             if (_http == null)
             {
-                if (config.ApiKey != null)
+                if (apiKey != null)
                 {
                     ClientOptions co = new ClientOptions();
-                    co.ApiKey = config.ApiKey;
+                    co.ApiKey = apiKey;
                     return new AnthropicClient(co).AsIChatClient(config.Model);
                 }
                 return new AnthropicClient().AsIChatClient(config.Model); // this case supports using the APIKey from the environment variable (default anthropic implementation)
             }
 
             ClientOptions coDebug = new ClientOptions();
-            if (config.ApiKey != null) coDebug.ApiKey = config.ApiKey;
+            if (apiKey != null) coDebug.ApiKey = apiKey;
             coDebug.HttpClient = _http;
             return new AnthropicClient(coDebug).AsIChatClient(config.Model);
         }
@@ -80,7 +86,7 @@ public sealed class LLMModelRegistry(
 
         OpenAIClientOptions options = new OpenAIClientOptions { Endpoint = new Uri(config.Endpoint) };
         if (_http != null) options.Transport = new HttpClientPipelineTransport(_http);
-        ApiKeyCredential credential = new ApiKeyCredential(config.ApiKey == null ? "none" : config.ApiKey);
+        ApiKeyCredential credential = new ApiKeyCredential(apiKey == null ? "none" : apiKey);
         return new OpenAIClient(credential, options).GetChatClient(config.Model).AsIChatClient();
     }
 
@@ -91,8 +97,8 @@ public sealed class LLMModelRegistry(
         {
             try
             {
-                log.LogInformation("Adding LLM Model: '{Name}', '{Provider}', '{Model}', '{Endpoint}', '{ApiKey}', '{SupportsTools}'",
-                    config.Id, config.Provider, config.Model, config.Endpoint, config.ApiKey, config.SupportsTools);
+                log.LogInformation("Adding LLM Model: '{Name}', '{Provider}', '{Model}', '{Endpoint}', apiKey configured: {HasApiKey}, '{SupportsTools}'",
+                    config.Id, config.Provider, config.Model, config.Endpoint, config.ApiKey != null, config.SupportsTools);
                 _clients.Add(config.Id, createClient(config));
             }
             catch (Exception ex)

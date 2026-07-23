@@ -1,5 +1,5 @@
-using System.Text.RegularExpressions;
 using ModelContextProtocol.Client;
+using McpHost.Config;
 
 namespace McpHost.Mcp;
 
@@ -24,7 +24,7 @@ public static class McpConnectionFactory
 
         // Expand ${ENV_VAR} placeholders in header values so secrets live in environment
         // variables, never in the committed config file.
-        var headers = config.Headers.ToDictionary(kv => kv.Key, kv => ExpandEnv(kv.Value));
+        var headers = config.Headers.ToDictionary(kv => kv.Key, kv => EnvExpansion.Expand(kv.Value));
 
         var transport = new HttpClientTransport(new HttpClientTransportOptions
         {
@@ -38,14 +38,4 @@ public static class McpConnectionFactory
         // HttpRequestException with a 401.
         return await McpClient.CreateAsync(transport, cancellationToken: ct);
     }
-
-    // Replaces every "${NAME}" with environment variable NAME. Handles embedded
-    // placeholders, e.g. "Bearer ${GITHUB_MCP_PAT}".
-    private static string ExpandEnv(string value) =>
-        Regex.Replace(value, @"\$\{(\w+)\}", m =>
-        {
-            var name = m.Groups[1].Value;
-            return Environment.GetEnvironmentVariable(name)
-                   ?? throw new InvalidOperationException($"Environment variable '{name}' is not set.");
-        });
 }

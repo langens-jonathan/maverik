@@ -159,8 +159,9 @@ container.
 git clone <this-repo>
 cd maverik
 
-cp llm-models.example.json llm-models.json         # LLM models + API keys
-cp docker-compose.example.yml docker-compose.yml    # ports, env vars, mounts
+cp .env.example .env                                # secrets: API keys, tokens
+cp llm-models.example.json llm-models.json          # LLM models, referencing .env by name
+cp docker-compose.example.yml docker-compose.yml     # ports, mounts, env_file
 
 # Author these directly — no committed .example (see Configuration below for the schemas)
 #   mcp-servers.json
@@ -168,14 +169,16 @@ cp docker-compose.example.yml docker-compose.yml    # ports, env vars, mounts
 #   maverik-suites/*.json
 ```
 
-Secrets never go in config files — header values in `mcp-servers.json` support
-`${ENV_VAR}` placeholders, the Anthropic key falls back to `ANTHROPIC_API_KEY`, and
-`docker-compose.yml` reads both from your shell environment.
+Secrets never go in JSON config files — put real values in `.env` (gitignored), then
+reference them by name as `${VAR_NAME}` in `mcp-servers.json` headers or `llm-models.json`'s
+`apiKey` field. `docker-compose.yml` loads `.env` straight into the container via `env_file:`,
+so any variable you add there is available for expansion without touching the compose file.
+**Never paste real secrets into a chat/terminal session that gets logged — edit `.env` directly
+in a file editor.**
 
 ### 2. `docker compose up -d`
 
 ```powershell
-$env:ANTHROPIC_API_KEY = "sk-ant-..."
 docker compose up -d --build
 ```
 
@@ -201,11 +204,16 @@ curl http://localhost:5088/api/maverik/runs/github-basics-20260709-141502/summar
 
 | File | What it defines |
 | --- | --- |
-| `llm-models.json` | LLM models across providers, plus optional per-MTok pricing. Gitignored (secrets); copy from `llm-models.example.json`. |
-| `mcp-servers.json` | MCP servers (name, HTTP endpoint, headers with `${ENV_VAR}` expansion). Gitignored. |
+| `.env` | Real secret values (API keys, tokens). Gitignored; copy from `.env.example`. Loaded into the container by `docker-compose.yml`'s `env_file:`. |
+| `llm-models.json` | LLM models across providers, plus optional per-MTok pricing; `apiKey` supports `${VAR_NAME}` expansion against `.env`. Gitignored (secrets); copy from `llm-models.example.json`. |
+| `mcp-servers.json` | MCP servers (name, HTTP endpoint, headers with `${VAR_NAME}` expansion against `.env`). Gitignored. |
 | `agents.json` | The agent configurations under test. Gitignored. |
 | `maverik-suites/*.json` | Test suites: questions, criteria, default agent set, judge model. |
 | `prompts/agent/<id>.md` | An agent's system prompt, when not defined inline. |
+
+Both `mcp-servers.json` headers and `llm-models.json`'s `apiKey` share the same `${VAR_NAME}`
+expansion (`src/config/EnvExpansion.cs`): a variable referenced but not defined in `.env` fails
+startup with a clear error rather than sending an empty credential.
 
 ### An agent configuration
 
@@ -231,6 +239,7 @@ The system prompt is either inline (`"systemPrompt": "..."`) or in
   "id": "claude-sonnet",
   "provider": "anthropic",
   "model": "claude-sonnet-5",
+  "apiKey": "${ANTHROPIC_API_KEY}",   // expanded against .env at model-load time
   "inputPricePerMTok": 3.00,          // optional — enables cost estimation
   "outputPricePerMTok": 15.00
 }
@@ -396,10 +405,10 @@ A minimal reference client lives under `wwwroot/` — open `http://localhost:508
 
 ## 🐛 Debugging
 
-Uncomment the `MCPHOST_LLM_DEBUG=1` line under `environment:` in `docker-compose.yml` (see the
-template) and every raw LLM HTTP exchange — agent *and* judge traffic — is written to
-`logs/{sessionId|runId}.log` on the host (via the `./logs:/app/logs` mount) with method,
-endpoint, full bodies, round-trip time, and token usage. Off by default with zero overhead.
+Uncomment the `MCPHOST_LLM_DEBUG=1` line in `.env` and every raw LLM HTTP exchange — agent
+*and* judge traffic — is written to `logs/{sessionId|runId}.log` on the host (via the
+`./logs:/app/logs` mount) with method, endpoint, full bodies, round-trip time, and token usage.
+Off by default with zero overhead.
 
 ## 🎛️ The JMeter analogy, fleshed out
 

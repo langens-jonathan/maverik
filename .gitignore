@@ -85,7 +85,8 @@ PublishScripts/
 *.ndf
 ScaffoldingReadMe.txt
 
-# Secrets / local config (do NOT commit tokens like your GitHub PAT)
+# Secrets / local config (do NOT commit tokens like your GitHub PAT).
+# The .env.example template stays committed — *.env/.env only match the filled-in copy.
 appsettings.*.local.json
 secrets.json
 *.env
