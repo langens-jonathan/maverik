@@ -448,11 +448,39 @@ you defined up front, whether the change actually helped or just moved the cost 
 
 ## 🗺️ Roadmap
 
+### Near-term — close the docs/code gap
+
+- **Comparison summary endpoint** — `GET /api/maverik/runs/{id}/summary` +
+  `results/{runId}/summary.json`: per-agent pass rate, avg duration/tokens/iterations/tool
+  calls, estimated cost, and judge overhead, side by side. This is the "JMeter moment" the
+  rest of the README already describes — it just isn't built yet.
+- **Docker packaging** — `Dockerfile` + `docker-compose.example.yml`, secrets mounted at run
+  time and never baked into the image. Also referenced elsewhere in this README as if live.
+
+### Making the tune-and-compare workflow easier
+
+- **Parameterized agent sweeps** — generate a matrix of `AgentConfig`s from a base config plus
+  a set of variations (e.g. 3 system prompts × 2 models = 6 agents) instead of hand-authoring
+  every combination in `agents.json` — the direct analog of JMeter's CSV-driven
+  parameterization.
+- **Per-tool cost/weight tracking** — tag MCP tools with a cost weight so the summary can
+  report a *weighted* tool-cost signal instead of just `toolCallCount`/`toolNames`, so
+  "expensive tool used sparingly" becomes a number, not just a name in a list.
+- **Context-reduction strategies** — history-trimming/summarization as a loop-level lever
+  (a new `ILoopStrategy` concern), sitting alongside `manual` and `parallel-tools` as
+  something you can A/B like any other tunable parameter.
+
+### Result analysis and visibility
+
 - **Web dashboard** — run browser, side-by-side agent charts, pass-rate trends.
-- **Configurable concurrency** — JMeter-style parallel case execution for load testing.
-- **More loop strategies** — SDK-driven function invocation, retry-on-tool-error, reflection loops.
 - **Statistical rigor** — percentiles and std-dev over repetitions, flakiness detection.
 - **Run history across restarts** — rehydrate past runs from `results/` at startup.
+
+### Other
+
+- **More loop strategies** — SDK-driven function invocation, retry-on-tool-error, reflection
+  loops.
+- **Configurable concurrency** — JMeter-style parallel case execution for load testing.
 - **Judge quality controls** — second-opinion judging, self-consistency checks.
 
 ## 🤝 Contributing
