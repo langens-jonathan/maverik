@@ -1,0 +1,24 @@
+# Build output — rebuilt inside the image
+bin/
+obj/
+
+# Runtime output — mounted as volumes, not baked into the image
+logs/
+results/
+
+# VCS / editor
+.git/
+.gitignore
+.vs/
+.idea/
+.claude/
+
+# Docs — not needed at runtime
+*.md
+
+# Secrets / local config — NEVER bake these into an image layer.
+# The .example templates are not excluded and stay available for reference if needed.
+llm-models.json
+mcp-servers.json
+agents.json
+docker-compose.yml

@@ -1,6 +1,13 @@
+# Local-only docs — not shared with the team, kept out of diffs and `git add .`
+CLAUDE.md
+architecture-docs/
+
 # MCP Host configuration (real files hold secrets — commit the .example templates instead)
 mcp-servers.json
 llm-models.json
+
+# Filled-in Docker Compose config (the .example template stays committed)
+docker-compose.yml
 
 # Per-session LLM wire logs (MCPHOST_LLM_DEBUG)
 logs/

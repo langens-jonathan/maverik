@@ -1,7 +1,12 @@
 using System.Net;
 using System.Text.Json;
 using Anthropic;
-using McpHost;
+using McpHost.Agents;
+using McpHost.Chat;
+using McpHost.LlmModel;
+using McpHost.Loop;
+using McpHost.Maverik;
+using McpHost.Mcp;
 using Microsoft.Extensions.AI;
 
 var builder = WebApplication.CreateBuilder(args);

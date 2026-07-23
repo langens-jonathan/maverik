@@ -72,13 +72,14 @@ that's enough or it needs another tool, and eventually answer. That loop — *ca
 answer, repeat until done* — is what makes something an agent rather than a one-shot
 completion.
 
-MAVERIK's MCP host implements exactly that loop (see `ChatWorker.cs` / `ILoopStrategy`), and
-the tools it hands the model come from one or more **MCP servers** — servers exposing typed,
-discoverable functions over the [Model Context Protocol](https://modelcontextprotocol.io).
+MAVERIK's MCP host implements exactly that loop (see `src/chat/ChatWorker.cs` /
+`src/loop/LoopStrategy.cs`), and the tools it hands the model come from one or more
+**MCP servers** — servers exposing typed, discoverable functions over the
+[Model Context Protocol](https://modelcontextprotocol.io).
 
 MAVERIK's specific definition of "agent" is an **Agent Configuration** — the `AgentConfig`
-object defined in `agents.json`. It's a named bundle of everything that determines how the
-loop behaves for a given use case:
+object (`src/agents/AgentConfig.cs`) defined in `agents.json`. It's a named bundle of
+everything that determines how the loop behaves for a given use case:
 
 | Field | Meaning |
 | --- | --- |
@@ -143,48 +144,47 @@ share the *same* loop code — what you measure is what you ship.
 
 ## 🚀 Quick start
 
+MAVERIK is Docker/Compose-only — there's no supported bare-metal path, just config and a
+container.
+
 ### Prerequisites
 
-- [.NET 9 SDK](https://dotnet.microsoft.com/download/dotnet/9.0) (or just Docker)
+- [Docker](https://docs.docker.com/get-docker/) with Compose
 - At least one reachable MCP server (HTTP / streamable-HTTP transport)
 - An API key for Anthropic and/or any OpenAI-compatible endpoint
 
-### 1. Clone and configure
+### 1. Fill out the config files
 
 ```powershell
 git clone <this-repo>
-cd MCPHost
+cd maverik
 
-# Models: copy the template and fill in your keys
-cp llm-models.example.json llm-models.json
+cp llm-models.example.json llm-models.json         # LLM models + API keys
+cp docker-compose.example.yml docker-compose.yml    # ports, env vars, mounts
 
-# MCP servers, agents, and a first test suite
-# (see Configuration below for the schemas)
+# Author these directly — no committed .example (see Configuration below for the schemas)
+#   mcp-servers.json
+#   agents.json
+#   maverik-suites/*.json
 ```
 
 Secrets never go in config files — header values in `mcp-servers.json` support
-`${ENV_VAR}` placeholders, and the Anthropic key falls back to `ANTHROPIC_API_KEY`.
+`${ENV_VAR}` placeholders, the Anthropic key falls back to `ANTHROPIC_API_KEY`, and
+`docker-compose.yml` reads both from your shell environment.
 
-### 2. Run locally
+### 2. `docker compose up -d`
 
 ```powershell
 $env:ANTHROPIC_API_KEY = "sk-ant-..."
-dotnet run
-# → http://localhost:5088
-```
-
-### 3. …or run in Docker
-
-```powershell
-cp docker-compose.example.yml docker-compose.yml   # then adjust mounts/env to taste
-docker compose up --build
-# → http://localhost:5088
+docker compose up -d --build
 ```
 
 Config files are bind-mounted read-only; `results/` and `logs/` are mounted read-write so
 your benchmark data survives the container. Remember that *inside* the container,
 `localhost` is the container — MCP servers running on your host machine are reached via
-`http://host.docker.internal:...`.
+`http://host.docker.internal:...` (already wired up in the compose template).
+
+### 3. Browse to `http://localhost:5088`
 
 ### 4. Fire your first benchmark
 
@@ -396,9 +396,10 @@ A minimal reference client lives under `wwwroot/` — open `http://localhost:508
 
 ## 🐛 Debugging
 
-Set `MCPHOST_LLM_DEBUG=1` and every raw LLM HTTP exchange — agent *and* judge traffic —
-is written to `logs/{sessionId|runId}.log` with method, endpoint, full bodies, round-trip
-time, and token usage. Off by default with zero overhead.
+Uncomment the `MCPHOST_LLM_DEBUG=1` line under `environment:` in `docker-compose.yml` (see the
+template) and every raw LLM HTTP exchange — agent *and* judge traffic — is written to
+`logs/{sessionId|runId}.log` on the host (via the `./logs:/app/logs` mount) with method,
+endpoint, full bodies, round-trip time, and token usage. Off by default with zero overhead.
 
 ## 🎛️ The JMeter analogy, fleshed out
 
@@ -454,8 +455,6 @@ you defined up front, whether the change actually helped or just moved the cost 
   `results/{runId}/summary.json`: per-agent pass rate, avg duration/tokens/iterations/tool
   calls, estimated cost, and judge overhead, side by side. This is the "JMeter moment" the
   rest of the README already describes — it just isn't built yet.
-- **Docker packaging** — `Dockerfile` + `docker-compose.example.yml`, secrets mounted at run
-  time and never baked into the image. Also referenced elsewhere in this README as if live.
 
 ### Making the tune-and-compare workflow easier
 

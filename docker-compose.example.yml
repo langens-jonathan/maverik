@@ -1,0 +1,29 @@
+# Committed template. Copy to docker-compose.yml (gitignored) and adjust to taste:
+#   cp docker-compose.example.yml docker-compose.yml
+#
+# MCP server endpoint addresses change inside a container: "http://localhost:..." now points at
+# the container itself. For an MCP server running on your host machine, use
+# http://host.docker.internal:... (the extra_hosts entry below makes that resolve on Linux too;
+# Docker Desktop on Mac/Windows resolves it out of the box). For an MCP server that's itself
+# another compose service, use that service's name instead.
+services:
+  maverik:
+    build: .
+    ports:
+      - "5088:8080"                       # host:container — keeps the familiar local URL
+    environment:
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - GITHUB_MCP_PAT=${GITHUB_MCP_PAT}  # any ${ENV_VAR} used in mcp-servers.json headers
+      # - MCPHOST_LLM_DEBUG=1             # opt-in wire logging -> logs/{sessionId|runId}.log
+    volumes:
+      # Config: mounted read-only, never baked into the image.
+      - ./llm-models.json:/app/llm-models.json:ro
+      - ./mcp-servers.json:/app/mcp-servers.json:ro
+      - ./agents.json:/app/agents.json:ro
+      - ./prompts:/app/prompts:ro
+      - ./maverik-suites:/app/maverik-suites:ro
+      # Output: mounted read-write so runs/logs survive the container.
+      - ./results:/app/results
+      - ./logs:/app/logs
+    extra_hosts:
+      - "host.docker.internal:host-gateway"   # lets the container reach MCP servers on the host (needed on Linux)
