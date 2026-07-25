@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useNavigate, useParams, Link } from "react-router-dom";
 import { api } from "../api.js";
+import { NotFound } from "../components/NotFound.jsx";
 
 function describeCriterion(criterion) {
   switch (criterion.type) {
@@ -44,6 +45,7 @@ export function SuiteDetailPage() {
       .catch(setError);
   }, [suiteId]);
 
+  if (error?.status === 404) return <NotFound message={`No suite '${suiteId}'.`} />;
   if (error) return <p className="error-text">Failed to load suite: {error.message}</p>;
   if (!suite) return <p className="muted">Loading…</p>;
 

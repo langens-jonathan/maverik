@@ -3,6 +3,7 @@ import { Link, useParams } from "react-router-dom";
 import { api } from "../api.js";
 import { usePolling } from "../hooks/usePolling.js";
 import { BarRow } from "../components/BarRow.jsx";
+import { NotFound } from "../components/NotFound.jsx";
 
 const AGENT_COLORS = ["#1a56db", "#057a55", "#9333ea", "#c2410c", "#0e7490", "#be123c"];
 
@@ -35,6 +36,7 @@ export function RunDetailPage() {
   );
   const [expanded, setExpanded] = useState(null);
 
+  if (runError?.status === 404) return <NotFound message={`No run '${runId}'.`} />;
   if (runError) return <p className="error-text">Failed to load run: {runError.message}</p>;
   if (!run) return <p className="muted">Loading…</p>;
 

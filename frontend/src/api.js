@@ -7,7 +7,9 @@ async function request(path, options) {
   });
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
-    throw new Error(body.error || `${res.status} ${res.statusText}`);
+    const err = new Error(body.error || `${res.status} ${res.statusText}`);
+    err.status = res.status; // lets callers distinguish "doesn't exist" (404) from other failures
+    throw err;
   }
   return res.status === 204 ? null : res.json();
 }

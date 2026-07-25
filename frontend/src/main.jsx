@@ -13,6 +13,7 @@ import { McpServersConfigPage } from "./pages/McpServersConfigPage.jsx";
 import { ToolCostsConfigPage } from "./pages/ToolCostsConfigPage.jsx";
 import { SuitesConfigPage } from "./pages/SuitesConfigPage.jsx";
 import { PromptsConfigPage } from "./pages/PromptsConfigPage.jsx";
+import { NotFound } from "./components/NotFound.jsx";
 import "./styles.css";
 
 ReactDOM.createRoot(document.getElementById("root")).render(
@@ -34,6 +35,7 @@ ReactDOM.createRoot(document.getElementById("root")).render(
             <Route path="suites" element={<SuitesConfigPage />} />
             <Route path="prompts" element={<PromptsConfigPage />} />
           </Route>
+          <Route path="*" element={<NotFound message="Page not found." />} />
         </Route>
       </Routes>
     </BrowserRouter>
