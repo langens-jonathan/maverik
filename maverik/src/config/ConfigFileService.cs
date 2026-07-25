@@ -137,6 +137,43 @@ public sealed class ConfigFileService
 
     private string DashboardPath(string id) => Path.Combine(_configDir, "reporting", "dashboards", id + ".json");
 
+    // One file per report under reporting/reports/ — same pattern as dashboards, no registry
+    // (reports aren't read on any hot path either).
+    public IReadOnlyList<ReportConfig> ListReports()
+    {
+        var dir = Path.Combine(_configDir, "reporting", "reports");
+        if (!Directory.Exists(dir))
+            return Array.Empty<ReportConfig>();
+
+        return Directory.GetFiles(dir, "*.json")
+            .Select(path => JsonSerializer.Deserialize<ReportConfig>(File.ReadAllText(path), ReadOptions))
+            .Where(r => r is not null)
+            .Select(r => r!)
+            .OrderBy(r => r.Id, StringComparer.Ordinal)
+            .ToList();
+    }
+
+    public ReportConfig? LoadReport(string id)
+    {
+        var path = ReportPath(id);
+        return File.Exists(path)
+            ? JsonSerializer.Deserialize<ReportConfig>(File.ReadAllText(path), ReadOptions)
+            : null;
+    }
+
+    public bool ReportExists(string id) => File.Exists(ReportPath(id));
+
+    public void SaveReport(string id, ReportConfig data)
+    {
+        var path = ReportPath(id);
+        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+        File.WriteAllText(path, JsonSerializer.Serialize(data, WriteOptions));
+    }
+
+    public void DeleteReport(string id) => File.Delete(ReportPath(id));
+
+    private string ReportPath(string id) => Path.Combine(_configDir, "reporting", "reports", id + ".json");
+
     private (T, bool) Load<T>(string fileName)
     {
         var real = Path.Combine(_configDir, fileName);

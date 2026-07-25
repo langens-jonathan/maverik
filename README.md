@@ -224,8 +224,8 @@ form** on each test plan (pick agents/repetitions, start a run), **Runs** (live 
 run executes, then the per-agent comparison — pass rate, duration, tokens, estimated cost — plus
 a per-case results table once it's done), **Config** (structured editors for `agents.json`,
 `llm-models.json`, `mcp-servers.json`, MAVERIK suites, tool costs, and per-agent prompt files —
-see Configuration below), and **Reporting** (visualizations, composed into dashboards — see
-[Reporting](#-reporting) below; still growing).
+see Configuration below), and **Reporting** (visualizations, composed into dashboards, filtered
+and selected via reports — see [Reporting](#-reporting) below).
 
 Because the API URL is baked into the static build at image-build time (Vite's `VITE_API_BASE_URL`,
 set via the `args:` block in `docker-compose.yml`), if you change `maverik`'s published port from
@@ -262,6 +262,7 @@ maverik`** after a save (the dashboard says so explicitly).
 | `config/prompts/agent/<id>.md` | An agent's system prompt, when not defined inline. |
 | `config/reporting/visualizations/<id>.js` | Visualization functions, authored directly on disk (no PUT/UI editor) — see [Reporting](#-reporting). |
 | `config/reporting/dashboards/<id>.json` | Dashboards: sections of visualizations, editable via `Reporting > Dashboards` — see [Dashboards](#dashboards). |
+| `config/reporting/reports/<id>.json` | Saved reports: a suite/time-range filter + a dashboard choice, editable via `Reporting > Reports` — see [Reports](#reports). |
 
 Both `mcp-servers.json` headers and `llm-models.json`'s `apiKey` share the same `${VAR_NAME}`
 expansion (`maverik/src/config/EnvExpansion.cs`): a variable referenced but not defined in
@@ -457,12 +458,15 @@ A minimal reference client lives under `wwwroot/` — open `http://localhost:508
 | GET | `/api/maverik/runs` | List runs with state and progress. |
 | GET | `/api/maverik/runs/{id}` | Full run status incl. per-case results (poll while running). |
 | GET | `/api/maverik/runs/{id}/summary` | Per-agent aggregates + cost estimates + judge overhead. |
-| GET | `/api/maverik/suite-runs?suiteId=` | List persisted per-(suite, agent, timestamp) result records — the data [Reporting](#-reporting) visualizations consume. |
+| GET | `/api/maverik/suite-runs?suiteIds=&from=&to=` | List persisted per-(suite, agent, timestamp) result records, optionally filtered — the data [Reporting](#-reporting) visualizations consume. |
 | GET | `/api/reporting/visualizations` | List available visualizations (id + last-modified). |
 | GET | `/api/reporting/visualizations/{id}` | Raw JS source of one visualization — see [Reporting](#-reporting). |
 | GET | `/api/reporting/dashboards` | List all dashboards (full definitions, not just ids). |
 | GET | `/api/reporting/dashboards/{id}` | Full detail of one dashboard: title + sections + visualization refs. |
 | POST/PUT/DELETE | `/api/reporting/dashboards[/{id}]` | Create/update/delete a dashboard — see [Dashboards](#dashboards). |
+| GET | `/api/reporting/reports` | List all saved reports. |
+| GET | `/api/reporting/reports/{id}` | Full detail of one report: filter + dashboard id. |
+| POST/PUT/DELETE | `/api/reporting/reports[/{id}]` | Create/update/delete a report — see [Reports](#reports). |
 | POST | `/api/session` | Establish a chat session cookie. |
 | POST | `/api/chat` | Enqueue a chat message for an agent. |
 | GET | `/api/messages` | Drain buffered chat messages for the session. |
@@ -501,8 +505,7 @@ functions you write yourself, rendering either a chart or a table (there's no se
 type — both have the identical contract, so it's just a matter of what a given function draws) —
 and preview them against real MAVERIK results. This is the data-visualization layer for comparing
 runs. **Dashboards** compose several visualizations into titled sections — see below.
-**Reports** (filtering/selecting suite-runs, then feeding them into a dashboard) build on top of
-both but don't exist yet.
+**Reports** filter/select suite-runs and feed them into a dashboard — also below.
 
 A visualization is a file under `config/reporting/visualizations/<id>.js`, id = filename. Unlike
 every other editable config in MAVERIK, **there's no PUT endpoint or in-app editor for these** —
@@ -542,6 +545,30 @@ The dashboard editor doubles as a preview: pick one or more suite-runs and every
 live via the same visualization-execution mechanism as the Visualizations tab — no need to save
 first, since a dashboard is just a client-side composition of files and run data you already have
 locally while editing.
+
+### Reports
+
+A report is a saved `{ title, filter: { suiteIds, from?, to? }, dashboardId }` — the thing that
+actually answers "how did this suite's runs look over the last two weeks?" `Reporting > Reports`
+lists saved reports, each with two separate, deep-linkable screens:
+
+- **Open** (`/reporting/reports/:id`) — the plain result. Resolves the report's filter against
+  every currently-matching run and renders the dashboard against all of them. Read-only.
+- **Configure** (`/reporting/reports/:id/configure`, or `/reporting/reports/new` for a blank
+  one) — filter + dashboard picker with a live preview:
+  1. Pick one or more suites (or leave empty for "any") and an optional date range.
+  2. **Find runs** — matches against the same persisted `SuiteRunRecord`s
+     (`results/suite-runs/*.json`) the Visualizations/Dashboards previews use, all pre-selected;
+     deselect any you don't want included.
+  3. Pick a dashboard. It renders immediately against the selected runs.
+  4. **Save report** is optional, at any point — you don't need to save anything just to look at
+     a result.
+
+Saving only persists the filter and dashboard choice, **not** which runs matched at save time —
+opening a saved report's Configure screen re-resolves the filter fresh (new runs may have
+appeared since), and Open always reflects current matches too, never a stale snapshot. One file
+per report under `config/reporting/reports/<id>.json`, same no-registry CRUD pattern as
+dashboards; the only thing validated at save time is that the chosen dashboard actually exists.
 
 ## 🎛️ The JMeter analogy, fleshed out
 
@@ -604,10 +631,6 @@ you defined up front, whether the change actually helped or just moved the cost 
 ### Result analysis and visibility
 
 - **Statistical rigor** — percentiles and std-dev over repetitions, flakiness detection.
-- **Reports** — [Reporting](#-reporting) ships the visualization building block and
-  [dashboards](#dashboards) that compose them into titled sections; a "report" layer on top
-  (filter/select suite-runs by suite + time range, then feed the selection into a chosen
-  dashboard) is next.
 
 ### Other
 

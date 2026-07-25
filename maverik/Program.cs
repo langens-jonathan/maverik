@@ -558,22 +558,77 @@ app.MapGet("/api/maverik/runs/{runId}/summary", (
         : Results.NotFound(new { error = $"No run '{runId}'." }));
 
 // List persisted per-(suite, agent, timestamp) benchmark records — the comparison-ready
-// artifacts (see SuiteRunRecord), independent of the batch run.json they came from. No
-// comparison UI reads this yet; it's the data layer a future one will use.
-app.MapGet("/api/maverik/suite-runs", (string? suiteId) =>
+// artifacts (see SuiteRunRecord), independent of the batch run.json they came from. This is the
+// same endpoint the Reporting > Reports filter step uses (suiteIds/from/to), and what
+// VisualizationsPage/DashboardsPage call unfiltered for their run pickers.
+app.MapGet("/api/maverik/suite-runs", (string[]? suiteIds, DateTimeOffset? from, DateTimeOffset? to) =>
 {
     var dir = Path.Combine(builder.Environment.ContentRootPath, "results", "suite-runs");
     if (!Directory.Exists(dir))
         return Results.Ok(Array.Empty<SuiteRunRecord>());
 
+    var suiteIdSet = suiteIds is { Length: > 0 } ? suiteIds.ToHashSet(StringComparer.Ordinal) : null;
     var readOptions = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
     var records = Directory.GetFiles(dir, "*.json")
         .Select(path => JsonSerializer.Deserialize<SuiteRunRecord>(File.ReadAllText(path), readOptions))
-        .Where(r => r is not null && (string.IsNullOrEmpty(suiteId) || r.SuiteId == suiteId))
+        .Where(r => r is not null
+            && (suiteIdSet is null || suiteIdSet.Contains(r.SuiteId))
+            && (from is null || r.Timestamp >= from)
+            && (to is null || r.Timestamp <= to))
         .OrderByDescending(r => r!.Timestamp)
         .ToList();
 
     return Results.Ok(records);
+});
+
+// --- Reporting: reports (full CRUD) ---
+// A report bundles a suite/time-range filter with a chosen dashboard. Same no-registry,
+// read-fresh-from-disk pattern as dashboards.
+app.MapGet("/api/reporting/reports", (ConfigFileService cfg) =>
+    Results.Ok(cfg.ListReports()));
+
+app.MapGet("/api/reporting/reports/{id}", (string id, ConfigFileService cfg) =>
+    cfg.LoadReport(id) is { } report
+        ? Results.Ok(report)
+        : Results.NotFound(new { error = $"No report '{id}'." }));
+
+app.MapPost("/api/reporting/reports", (ReportConfig data, ConfigFileService cfg) =>
+{
+    if (string.IsNullOrWhiteSpace(data.Id) || !idPattern.IsMatch(data.Id))
+        return Results.BadRequest(new { error = "Report id must be non-empty and contain only letters, digits, '-', '_'." });
+    if (cfg.ReportExists(data.Id))
+        return Results.Conflict(new { error = $"A report with id '{data.Id}' already exists." });
+    if (ValidateReport(data, cfg) is { } error)
+        return error;
+
+    cfg.SaveReport(data.Id, data);
+    return Results.Created($"/api/reporting/reports/{data.Id}", data);
+});
+
+app.MapPut("/api/reporting/reports/{id}", (string id, ReportConfig data, ConfigFileService cfg) =>
+{
+    if (!idPattern.IsMatch(id))
+        return Results.BadRequest(new { error = "Invalid report id." });
+    if (data.Id != id)
+        return Results.BadRequest(new { error = $"Body id '{data.Id}' does not match URL id '{id}' — renaming isn't supported here, delete and re-create instead." });
+    if (!cfg.ReportExists(id))
+        return Results.NotFound(new { error = $"No report '{id}'." });
+    if (ValidateReport(data, cfg) is { } error)
+        return error;
+
+    cfg.SaveReport(id, data);
+    return Results.Ok(data);
+});
+
+app.MapDelete("/api/reporting/reports/{id}", (string id, ConfigFileService cfg) =>
+{
+    if (!idPattern.IsMatch(id))
+        return Results.BadRequest(new { error = "Invalid report id." });
+    if (!cfg.ReportExists(id))
+        return Results.NotFound(new { error = $"No report '{id}'." });
+
+    cfg.DeleteReport(id);
+    return Results.NoContent();
 });
 
 app.Run();
@@ -617,6 +672,20 @@ static IResult? ValidateDashboard(DashboardConfig data, ConfigFileService cfg)
         .ToList();
     if (missingRefs.Count > 0)
         return Results.BadRequest(new { error = $"Unknown visualization id(s): {string.Join(", ", missingRefs)}" });
+
+    return null;
+}
+
+// Shared by POST/PUT /api/reporting/reports. suiteIds in the filter are deliberately NOT
+// validated against MaverikSuiteRegistry — an id that matches no suite just means the filter
+// matches zero runs, which is self-evident and harmless, unlike a dangling dashboardId which
+// would break rendering entirely.
+static IResult? ValidateReport(ReportConfig data, ConfigFileService cfg)
+{
+    if (string.IsNullOrWhiteSpace(data.Title))
+        return Results.BadRequest(new { error = "Report needs a non-empty title." });
+    if (string.IsNullOrWhiteSpace(data.DashboardId) || !cfg.DashboardExists(data.DashboardId))
+        return Results.BadRequest(new { error = $"Unknown dashboard id '{data.DashboardId}'." });
 
     return null;
 }

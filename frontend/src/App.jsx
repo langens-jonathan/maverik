@@ -3,21 +3,22 @@ import { NavLink, Outlet, useLocation } from "react-router-dom";
 import { THEMES, useTheme } from "./hooks/useTheme.js";
 import { api } from "./api.js";
 
-// Mirrors the current route as "section / id" — MAVERIK's routes are never more than two
-// segments deep (/suites/:id, /runs/:id), so this doesn't need to handle more than that.
+// Mirrors the current route as "section / rest / of / path" — handles any depth, since Reporting
+// routes (e.g. /reporting/reports/:id/configure) go deeper than the two-segment /suites/:id,
+// /runs/:id routes this originally covered.
 function Crumb() {
   const { pathname } = useLocation();
-  const [section, id] = pathname.split("/").filter(Boolean);
+  const [section, ...rest] = pathname.split("/").filter(Boolean);
   if (!section) return null;
   return (
     <div className="crumb">
       {section}
-      {id && (
-        <>
+      {rest.map((segment, i) => (
+        <span key={i}>
           {" / "}
-          <b>{decodeURIComponent(id)}</b>
-        </>
-      )}
+          <b>{decodeURIComponent(segment)}</b>
+        </span>
+      ))}
     </div>
   );
 }

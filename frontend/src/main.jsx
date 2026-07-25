@@ -16,7 +16,9 @@ import { PromptsConfigPage } from "./pages/PromptsConfigPage.jsx";
 import { ReportingPage } from "./pages/ReportingPage.jsx";
 import { VisualizationsPage } from "./pages/VisualizationsPage.jsx";
 import { DashboardsPage } from "./pages/DashboardsPage.jsx";
-import { ReportingComingSoonPage } from "./pages/ReportingComingSoonPage.jsx";
+import { ReportsListPage } from "./pages/ReportsListPage.jsx";
+import { ReportConfigurePage } from "./pages/ReportConfigurePage.jsx";
+import { ReportViewPage } from "./pages/ReportViewPage.jsx";
 import { NotFound } from "./components/NotFound.jsx";
 import "./styles.css";
 
@@ -41,7 +43,10 @@ ReactDOM.createRoot(document.getElementById("root")).render(
           </Route>
           <Route path="reporting" element={<ReportingPage />}>
             <Route index element={<Navigate to="/reporting/reports" replace />} />
-            <Route path="reports" element={<ReportingComingSoonPage label="Reports" />} />
+            <Route path="reports" element={<ReportsListPage />} />
+            <Route path="reports/new" element={<ReportConfigurePage />} />
+            <Route path="reports/:id" element={<ReportViewPage />} />
+            <Route path="reports/:id/configure" element={<ReportConfigurePage />} />
             <Route path="dashboards" element={<DashboardsPage />} />
             <Route path="visualizations" element={<VisualizationsPage />} />
           </Route>

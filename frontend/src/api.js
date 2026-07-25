@@ -57,19 +57,35 @@ export const api = {
   getDevMode: () => request("/api/dev-mode"),
   setDevMode: (enabled) => request("/api/dev-mode", { method: "POST", body: JSON.stringify({ enabled }) }),
 
-  listSuiteRuns: (suiteId) =>
-    request(`/api/maverik/suite-runs${suiteId ? `?suiteId=${encodeURIComponent(suiteId)}` : ""}`),
+  listSuiteRuns: ({ suiteIds, from, to } = {}) => {
+    const params = new URLSearchParams();
+    (suiteIds ?? []).forEach((id) => params.append("suiteIds", id));
+    if (from) params.set("from", from);
+    if (to) params.set("to", to);
+    const qs = params.toString();
+    return request(`/api/maverik/suite-runs${qs ? `?${qs}` : ""}`);
+  },
 
   listVisualizations: () => request("/api/reporting/visualizations"),
   getVisualization: (id) => requestText(`/api/reporting/visualizations/${encodeURIComponent(id)}`),
 
   listDashboards: () => request("/api/reporting/dashboards"),
+  getDashboard: (id) => request(`/api/reporting/dashboards/${encodeURIComponent(id)}`),
   createDashboard: (data) =>
     request("/api/reporting/dashboards", { method: "POST", body: JSON.stringify(data) }),
   updateDashboard: (id, data) =>
     request(`/api/reporting/dashboards/${encodeURIComponent(id)}`, { method: "PUT", body: JSON.stringify(data) }),
   deleteDashboard: (id) =>
     request(`/api/reporting/dashboards/${encodeURIComponent(id)}`, { method: "DELETE" }),
+
+  listReports: () => request("/api/reporting/reports"),
+  getReport: (id) => request(`/api/reporting/reports/${encodeURIComponent(id)}`),
+  createReport: (data) =>
+    request("/api/reporting/reports", { method: "POST", body: JSON.stringify(data) }),
+  updateReport: (id, data) =>
+    request(`/api/reporting/reports/${encodeURIComponent(id)}`, { method: "PUT", body: JSON.stringify(data) }),
+  deleteReport: (id) =>
+    request(`/api/reporting/reports/${encodeURIComponent(id)}`, { method: "DELETE" }),
 
   createSuite: (data) => request("/api/maverik/suites", { method: "POST", body: JSON.stringify(data) }),
   updateSuite: (suiteId, data) =>

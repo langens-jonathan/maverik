@@ -1,0 +1,12 @@
+{
+  "id": "report1",
+  "title": "report 1",
+  "filter": {
+    "suiteIds": [
+      "smoke"
+    ],
+    "from": "2026-07-24T00:00:00+00:00",
+    "to": "2026-07-25T23:59:59+00:00"
+  },
+  "dashboardId": "smoke-overview"
+}
