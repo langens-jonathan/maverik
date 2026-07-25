@@ -188,8 +188,9 @@ compose file. **Never paste real secrets into a chat/terminal session that gets 
 docker compose up -d --build
 ```
 
-Config files are bind-mounted read-only; `results/` and `logs/` are mounted read-write so
-your benchmark data survives the container. Remember that *inside* the container,
+`./config` is bind-mounted read-write (so the dashboard's config editor — see below — can save
+changes) and `results/`/`logs/` are mounted read-write so your benchmark data survives the
+container. Remember that *inside* the container,
 `localhost` is the container — MCP servers running on your host machine are reached via
 `http://host.docker.internal:...` (already wired up in the compose template).
 
@@ -217,10 +218,12 @@ runs both; the frontend is a static build served by nginx, and it talks to `mave
 directly from your browser (not container-to-container), so no MCP-style networking concerns
 apply here.
 
-It gives you three views: **Test plans** (a suite's questions and criteria — the test plan
-itself), a **run form** on each test plan (pick agents/repetitions, start a run), and **Runs**
+It gives you four views: **Test plans** (a suite's questions and criteria — the test plan
+itself), a **run form** on each test plan (pick agents/repetitions, start a run), **Runs**
 (live progress while a run executes, then the per-agent comparison — pass rate, duration,
-tokens, estimated cost — plus a per-case results table once it's done).
+tokens, estimated cost — plus a per-case results table once it's done), and **Config**
+(structured editors for `agents.json`, `llm-models.json`, `mcp-servers.json`, and per-agent
+prompt files — see Configuration below).
 
 Because the API URL is baked into the static build at image-build time (Vite's `VITE_API_BASE_URL`,
 set via the `args:` block in `docker-compose.yml`), if you change `maverik`'s published port from
@@ -229,9 +232,16 @@ the default `5088`, update both that `args:` value *and* the `maverik` service's
 
 ## ⚙️ Configuration
 
-Everything user-editable lives under `./config/`; `docker-compose.yml` bind-mounts each file
-into the container read-only. Every real file below is gitignored and has a matching committed
-`config/*.example.*` template to copy from:
+Everything user-editable lives under `./config/`, bind-mounted read-write into the container.
+Every real JSON file below is gitignored and has a matching committed `config/*.example.*`
+template to copy from — and if you skip that step, the app copies it for you: a missing
+`agents.json`/`llm-models.json`/`mcp-servers.json` is bootstrapped from its `.example` sibling on
+first read, whether that read happens at container startup or from the dashboard's **Config**
+tab. The dashboard also lets you edit all three of those files, plus per-agent prompt files,
+through structured forms (`GET`/`PUT /api/config/agents`, `/llm-models`, `/mcp-servers`,
+`/prompts/{agentId}` — see API reference). Saves write straight to the files below; since every
+registry is built once at startup, **changes only take effect after `docker compose restart
+maverik`** (the dashboard says so after every save).
 
 | File | What it defines |
 | --- | --- |
@@ -425,6 +435,10 @@ A minimal reference client lives under `wwwroot/` — open `http://localhost:508
 | --- | --- | --- |
 | GET | `/api/agents` | List agent configurations (id, name, description, model, loop type, servers). |
 | GET | `/api/tools` | The aggregated MCP tool catalog, grouped by server. |
+| GET/PUT | `/api/config/agents` | View/edit `agents.json` (bootstraps from example if missing). PUT body/response is `AgentsFile`. |
+| GET/PUT | `/api/config/llm-models` | View/edit `llm-models.json`. |
+| GET/PUT | `/api/config/mcp-servers` | View/edit `mcp-servers.json`. |
+| GET/PUT | `/api/config/prompts/{agentId}` | View/edit `config/prompts/agent/{agentId}.md`. |
 | GET | `/api/maverik/suites` | List loaded test suites. |
 | GET | `/api/maverik/suites/{id}` | Full suite detail: questions + criteria (the test plan itself). |
 | POST | `/api/maverik/runs` | Start a run: `{ suiteId, agentIds?, repetitions? }` → `{ runId }`. |

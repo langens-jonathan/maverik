@@ -286,16 +286,23 @@ button.secondary { background: transparent; color: var(--accent); }
 button.secondary:hover:not(:disabled) { background: var(--accent-wash); }
 
 label { display: block; font-size: 0.8rem; color: var(--muted); margin: 0.6rem 0 0.3rem; }
-input[type="number"], select {
+input[type="number"], input[type="text"], select, textarea {
   font: inherit;
   font-family: var(--font-mono);
+  font-size: 0.85rem;
   padding: 0.35rem 0.55rem;
   border: 1px solid var(--border);
   border-radius: 4px;
   background: var(--bg);
   color: var(--text);
+  width: 100%;
+  box-sizing: border-box;
 }
-input[type="number"]:focus, select:focus { border-color: var(--accent-2); }
+input[type="number"]:focus, input[type="text"]:focus, select:focus, textarea:focus { border-color: var(--accent-2); }
+textarea { resize: vertical; line-height: 1.5; }
+textarea.prompt-editor { min-height: 320px; }
+
+.field-hint { font-size: 0.74rem; color: var(--muted); margin-top: 0.25rem; }
 
 .checkbox-list { display: flex; flex-wrap: wrap; gap: 0.9rem; margin: 0.3rem 0; }
 .checkbox-list label {
@@ -361,3 +368,49 @@ details.case-detail pre {
 progress { width: 100%; height: 6px; accent-color: var(--accent); }
 progress::-webkit-progress-bar { background: var(--track); border-radius: 3px; }
 progress::-webkit-progress-value { background: var(--accent); border-radius: 3px; }
+
+.subnav { display: flex; gap: 1.4rem; border-bottom: 1px solid var(--border-faint); margin-bottom: 1.25rem; }
+.subnav a {
+  color: var(--muted);
+  font-size: 0.84rem;
+  padding: 0.5rem 0.1rem;
+  border-bottom: 2px solid transparent;
+  display: inline-block;
+}
+.subnav a:hover { color: var(--text); text-decoration: none; }
+.subnav a.active { color: var(--text-strong); font-weight: 500; border-color: var(--accent); }
+
+.notice {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.6rem 0.9rem;
+  border-radius: var(--radius);
+  font-size: 0.83rem;
+  margin-bottom: 1.1rem;
+}
+.notice.ok { background: var(--ok-wash); color: var(--ok); border: 1px solid var(--ok); }
+.notice.info { background: var(--info-wash); color: var(--info); border: 1px solid var(--info); }
+.notice button.secondary { padding: 0.15rem 0.5rem; font-size: 0.72rem; border-color: currentColor; color: inherit; }
+.notice button.secondary:hover:not(:disabled) { background: rgba(255, 255, 255, 0.08); }
+
+.config-toolbar { display: flex; align-items: center; gap: 0.8rem; margin-bottom: 1.1rem; }
+.config-toolbar .spacer { flex: 1; }
+
+.config-row {
+  border: 1px solid var(--border-faint);
+  border-radius: var(--radius);
+  padding: 1rem 1.1rem;
+  margin-bottom: 1rem;
+}
+.config-row-header { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
+.config-row-header h4 { margin: 0; font-family: var(--font-mono); font-size: 0.88rem; color: var(--text-strong); }
+.config-row-header button { padding: 0.25rem 0.6rem; font-size: 0.72rem; }
+
+.field-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 0 1rem; }
+
+.kv-row { display: grid; grid-template-columns: 1fr 1fr auto; gap: 0.5rem; align-items: center; margin-bottom: 0.4rem; }
+.kv-row button { padding: 0.3rem 0.55rem; font-size: 0.72rem; }
+
+.add-row-btn { margin-top: 0.4rem; }

@@ -34,6 +34,9 @@ export default function App() {
           <NavLink to="/runs" className={({ isActive }) => (isActive ? "active" : "")}>
             Runs
           </NavLink>
+          <NavLink to="/config" className={({ isActive }) => (isActive ? "active" : "")}>
+            Config
+          </NavLink>
         </nav>
         <div className="header-right">
           <Crumb />

@@ -1,8 +1,8 @@
 using System.Net;
-using System.Text.Json;
 using Anthropic;
 using McpHost.Agents;
 using McpHost.Chat;
+using McpHost.Config;
 using McpHost.LlmModel;
 using McpHost.Loop;
 using McpHost.Maverik;
@@ -10,6 +10,16 @@ using McpHost.Mcp;
 using Microsoft.Extensions.AI;
 
 var builder = WebApplication.CreateBuilder(args);
+
+// --- Config directory ---
+// Every editable config file (agents.json, llm-models.json, mcp-servers.json, prompts/,
+// maverik-suites/) lives under ./config, bind-mounted read-write so /api/config/* can edit it
+// from the dashboard. A missing JSON config is bootstrapped from its committed *.example.json
+// sibling on first read — see ConfigFileService. Built before builder.Build() so the same
+// instance can both drive startup loading below and be registered for the endpoints.
+var configDir = Path.Combine(builder.Environment.ContentRootPath, "config");
+var configFiles = new ConfigFileService(configDir);
+builder.Services.AddSingleton(configFiles);
 
 // --- CORS (frontend) ---
 // The maverik-frontend container is a separate origin (different published port), so the
@@ -36,11 +46,7 @@ builder.Services.AddSession(options =>
 // Registered WITHOUT .UseFunctionInvocation(): the model returns raw FunctionCallContent and
 // the ChatWorker drives the tool loop itself. Adding that middleware back collapses the loop
 // to a single call.
-var llmModelsConfigPath = Path.Combine(builder.Environment.ContentRootPath, "llm-models.json");
-var llmModelsFile = JsonSerializer.Deserialize<LLMModelsConfig>(
-                  File.ReadAllText(llmModelsConfigPath),
-                  new JsonSerializerOptions { PropertyNameCaseInsensitive = true })
-              ?? new LLMModelsConfig { DefaultModelId = "" };
+var (llmModelsFile, _) = configFiles.LoadLlmModels();
 // Wire-level LLM debug logging. When MCPHOST_LLM_DEBUG is truthy, a DelegatingHandler is
 // injected into the provider clients that logs every raw HTTP request/response (per session)
 // to logs/{sessionId}.log and the ILogger. Off by default — zero overhead, clients built as
@@ -77,13 +83,7 @@ builder.Services.AddSingleton<ChatOutbox>();
 builder.Services.AddHostedService<ChatWorker>();
 
 // --- MCP servers ---
-// Load mcp-servers.json and bind it (case-insensitive, so "name" maps to Name).
-// ContentRootPath is the project dir during `dotnet run`.
-var mcpConfigPath = Path.Combine(builder.Environment.ContentRootPath, "mcp-servers.json");
-var mcpFile = JsonSerializer.Deserialize<McpServersFile>(
-                  File.ReadAllText(mcpConfigPath),
-                  new JsonSerializerOptions { PropertyNameCaseInsensitive = true })
-              ?? new McpServersFile();
+var (mcpFile, _) = configFiles.LoadMcpServers();
 builder.Services.AddSingleton<IReadOnlyList<McpServerConfig>>(mcpFile.Servers);
 
 // The registry is a singleton (endpoints and the worker read the catalog) AND a hosted
@@ -92,25 +92,21 @@ builder.Services.AddSingleton<McpServerRegistry>();
 builder.Services.AddHostedService(sp => sp.GetRequiredService<McpServerRegistry>());
 
 // --- Agents ---
-// Load agents.json the same way as mcp-servers.json. AgentRegistry needs ContentRootPath so it can
-// find each agent's prompt file (prompts/agent/<id>.md) when the prompt isn't inline.
-var agentsConfigPath = Path.Combine(builder.Environment.ContentRootPath, "agents.json");
-var agentsFile = JsonSerializer.Deserialize<AgentsFile>(
-                     File.ReadAllText(agentsConfigPath),
-                     new JsonSerializerOptions { PropertyNameCaseInsensitive = true })
-                 ?? new AgentsFile();
+// AgentRegistry needs configDir so it can find each agent's prompt file
+// (config/prompts/agent/<id>.md) when the prompt isn't inline.
+var (agentsFile, _) = configFiles.LoadAgents();
 builder.Services.AddSingleton<AgentRegistry>(sp =>
     new AgentRegistry(
         agentsFile,
-        builder.Environment.ContentRootPath,
+        configDir,
         sp.GetRequiredService<ILogger<AgentRegistry>>()));
 
 // --- MAVERIK test suites ---
-// One file per suite under maverik-suites/. Loaded and validated at startup; a missing folder
-// just means zero suites. AgentRegistry/LLMModelRegistry are injected so agent ids and judge
-// model ids in suite files are validated against the real configuration.
+// One file per suite under config/maverik-suites/. Loaded and validated at startup; a missing
+// folder just means zero suites. AgentRegistry/LLMModelRegistry are injected so agent ids and
+// judge model ids in suite files are validated against the real configuration.
 builder.Services.AddSingleton<MaverikSuiteRegistry>(sp => new MaverikSuiteRegistry(
-    builder.Environment.ContentRootPath,
+    configDir,
     sp.GetRequiredService<AgentRegistry>(),
     sp.GetRequiredService<LLMModelRegistry>(),
     sp.GetRequiredService<ILogger<MaverikSuiteRegistry>>()));
@@ -190,6 +186,83 @@ app.MapGet("/api/agents", (AgentRegistry agents) =>
         defaultAgent = agents.DefaultAgent,
         agents = agents.Agents.Select(a => new { a.Id, a.Name, a.Description, a.Model, a.LoopType, a.McpServers })
     }));
+
+// --- Config editing (dashboard) ---
+// View/edit the three editable JSON configs plus per-agent prompt files. Every registry above is
+// built once at startup, so a save here only takes effect after the container restarts — every
+// PUT response says so explicitly rather than implying a live update.
+app.MapGet("/api/config/agents", (ConfigFileService cfg) =>
+{
+    var (data, bootstrapped) = cfg.LoadAgents();
+    return Results.Ok(new { bootstrapped, data });
+});
+
+app.MapPut("/api/config/agents", (AgentsFile data, ConfigFileService cfg) =>
+{
+    if (data.Agents.Any(a => string.IsNullOrWhiteSpace(a.Id)))
+        return Results.BadRequest(new { error = "Every agent needs a non-empty id." });
+    var ids = data.Agents.Select(a => a.Id).ToList();
+    if (ids.Distinct(StringComparer.Ordinal).Count() != ids.Count)
+        return Results.BadRequest(new { error = "Agent ids must be unique." });
+    if (!string.IsNullOrWhiteSpace(data.DefaultAgent) && !ids.Contains(data.DefaultAgent))
+        return Results.BadRequest(new { error = $"defaultAgent '{data.DefaultAgent}' is not in the agents list." });
+
+    cfg.SaveAgents(data);
+    return Results.Ok(new { restartRequired = true });
+});
+
+app.MapGet("/api/config/llm-models", (ConfigFileService cfg) =>
+{
+    var (data, bootstrapped) = cfg.LoadLlmModels();
+    return Results.Ok(new { bootstrapped, data });
+});
+
+app.MapPut("/api/config/llm-models", (LLMModelsConfig data, ConfigFileService cfg) =>
+{
+    if (data.Models.Any(m => string.IsNullOrWhiteSpace(m.Id)))
+        return Results.BadRequest(new { error = "Every model needs a non-empty id." });
+    var ids = data.Models.Select(m => m.Id).ToList();
+    if (ids.Distinct(StringComparer.Ordinal).Count() != ids.Count)
+        return Results.BadRequest(new { error = "Model ids must be unique." });
+    if (string.IsNullOrWhiteSpace(data.DefaultModelId) || !ids.Contains(data.DefaultModelId))
+        return Results.BadRequest(new { error = $"defaultModelId '{data.DefaultModelId}' is not in the models list." });
+
+    cfg.SaveLlmModels(data);
+    return Results.Ok(new { restartRequired = true });
+});
+
+app.MapGet("/api/config/mcp-servers", (ConfigFileService cfg) =>
+{
+    var (data, bootstrapped) = cfg.LoadMcpServers();
+    return Results.Ok(new { bootstrapped, data });
+});
+
+app.MapPut("/api/config/mcp-servers", (McpServersFile data, ConfigFileService cfg) =>
+{
+    if (data.Servers.Any(s => string.IsNullOrWhiteSpace(s.Name)))
+        return Results.BadRequest(new { error = "Every MCP server needs a non-empty name." });
+    var names = data.Servers.Select(s => s.Name).ToList();
+    if (names.Distinct(StringComparer.Ordinal).Count() != names.Count)
+        return Results.BadRequest(new { error = "MCP server names must be unique." });
+
+    cfg.SaveMcpServers(data);
+    return Results.Ok(new { restartRequired = true });
+});
+
+// Per-agent system prompt file (config/prompts/agent/<id>.md). No example template exists for
+// these (they're real committed content, not secrets), so a missing file just means an empty
+// draft rather than a copied-from-example one.
+app.MapGet("/api/config/prompts/{agentId}", (string agentId, ConfigFileService cfg) =>
+{
+    var (content, bootstrapped) = cfg.LoadPrompt(agentId);
+    return Results.Ok(new { bootstrapped, content });
+});
+
+app.MapPut("/api/config/prompts/{agentId}", (string agentId, PromptRequest request, ConfigFileService cfg) =>
+{
+    cfg.SavePrompt(agentId, request.Content ?? "");
+    return Results.Ok(new { restartRequired = true });
+});
 
 // List the loaded MAVERIK suites so a client can pick one to run. Question texts/criteria are
 // deliberately summarized to a count — the run results are where answers live.
@@ -289,3 +362,6 @@ public record ChatRequest(string Message, string? Agent = null);
 
 // Body of POST /api/maverik/runs. AgentIds defaults to the suite's list, Repetitions to 1.
 public record StartRunRequest(string? SuiteId, List<string>? AgentIds = null, int? Repetitions = null);
+
+// Body of PUT /api/config/prompts/{agentId}.
+public record PromptRequest(string? Content);

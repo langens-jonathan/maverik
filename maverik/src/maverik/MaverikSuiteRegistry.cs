@@ -19,12 +19,12 @@ public sealed class MaverikSuiteRegistry
     private readonly Dictionary<string, MaverikSuite> _suites = new();
 
     public MaverikSuiteRegistry(
-        string contentRootPath,
+        string configDir,
         AgentRegistry agents,
         LLMModelRegistry models,
         ILogger<MaverikSuiteRegistry> log)
     {
-        var dir = Path.Combine(contentRootPath, "maverik-suites");
+        var dir = Path.Combine(configDir, "maverik-suites");
         if (!Directory.Exists(dir))
         {
             log.LogInformation("No maverik-suites directory at '{Dir}'; 0 suites loaded.", dir);

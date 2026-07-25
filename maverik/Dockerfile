@@ -27,8 +27,9 @@ RUN mkdir -p /app/logs /app/results
 # to `dotnet run`, not this image — the port mapping to 5088 happens in docker-compose.
 EXPOSE 8080
 
-# ContentRootPath here is /app (this WORKDIR), so every startup File.ReadAllText(...) config
-# load (llm-models.json, mcp-servers.json, agents.json, prompts/, maverik-suites/) resolves to
-# /app/<name> — exactly where docker-compose mounts them. A missing mount fails startup loudly,
-# which is the existing fail-fast behavior working as intended.
+# ContentRootPath here is /app (this WORKDIR); config lives under /app/config (llm-models.json,
+# mcp-servers.json, agents.json, prompts/, maverik-suites/) — exactly where docker-compose mounts
+# ./config, read-write so /api/config/* can edit it. A missing JSON config file is bootstrapped
+# from its *.example.json sibling on first read (see ConfigFileService); a missing mount entirely
+# (no ./config at all) still fails startup loudly.
 ENTRYPOINT ["dotnet", "Maverik.dll"]

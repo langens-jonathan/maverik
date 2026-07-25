@@ -6,6 +6,11 @@ import { SuitesPage } from "./pages/SuitesPage.jsx";
 import { SuiteDetailPage } from "./pages/SuiteDetailPage.jsx";
 import { RunsPage } from "./pages/RunsPage.jsx";
 import { RunDetailPage } from "./pages/RunDetailPage.jsx";
+import { ConfigPage } from "./pages/ConfigPage.jsx";
+import { AgentsConfigPage } from "./pages/AgentsConfigPage.jsx";
+import { LlmModelsConfigPage } from "./pages/LlmModelsConfigPage.jsx";
+import { McpServersConfigPage } from "./pages/McpServersConfigPage.jsx";
+import { PromptsConfigPage } from "./pages/PromptsConfigPage.jsx";
 import "./styles.css";
 
 ReactDOM.createRoot(document.getElementById("root")).render(
@@ -18,6 +23,13 @@ ReactDOM.createRoot(document.getElementById("root")).render(
           <Route path="suites/:suiteId" element={<SuiteDetailPage />} />
           <Route path="runs" element={<RunsPage />} />
           <Route path="runs/:runId" element={<RunDetailPage />} />
+          <Route path="config" element={<ConfigPage />}>
+            <Route index element={<Navigate to="/config/agents" replace />} />
+            <Route path="agents" element={<AgentsConfigPage />} />
+            <Route path="llm-models" element={<LlmModelsConfigPage />} />
+            <Route path="mcp-servers" element={<McpServersConfigPage />} />
+            <Route path="prompts" element={<PromptsConfigPage />} />
+          </Route>
         </Route>
       </Routes>
     </BrowserRouter>

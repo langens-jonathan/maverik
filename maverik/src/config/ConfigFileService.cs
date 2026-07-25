@@ -1,0 +1,83 @@
+using System.Text.Json;
+using McpHost.Agents;
+using McpHost.LlmModel;
+using McpHost.Mcp;
+
+namespace McpHost.Config;
+
+// Reads and writes the three editable JSON config files (agents.json, llm-models.json,
+// mcp-servers.json) plus per-agent prompt files (prompts/agent/<id>.md), all rooted at
+// configDir. A missing JSON config is bootstrapped from its committed *.example.json sibling on
+// first read — Program.cs's startup load and the /api/config/* endpoints both go through this,
+// so the same self-heal behavior applies whether the file is needed at boot or from the UI.
+public sealed class ConfigFileService
+{
+    private static readonly JsonSerializerOptions ReadOptions = new() { PropertyNameCaseInsensitive = true };
+    private static readonly JsonSerializerOptions WriteOptions = new()
+    {
+        WriteIndented = true,
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase
+    };
+
+    private readonly string _configDir;
+
+    public ConfigFileService(string configDir)
+    {
+        _configDir = configDir;
+        Directory.CreateDirectory(_configDir);
+    }
+
+    public (AgentsFile Data, bool Bootstrapped) LoadAgents() => Load<AgentsFile>("agents.json");
+    public void SaveAgents(AgentsFile data) => Save("agents.json", data);
+
+    public (LLMModelsConfig Data, bool Bootstrapped) LoadLlmModels() => Load<LLMModelsConfig>("llm-models.json");
+    public void SaveLlmModels(LLMModelsConfig data) => Save("llm-models.json", data);
+
+    public (McpServersFile Data, bool Bootstrapped) LoadMcpServers() => Load<McpServersFile>("mcp-servers.json");
+    public void SaveMcpServers(McpServersFile data) => Save("mcp-servers.json", data);
+
+    // No example template exists per-prompt (prompts are real committed content, not
+    // secrets/user-specific values) — "bootstrapped" here just means the file doesn't exist yet,
+    // so the UI can start the editor from an empty draft instead of a copied template.
+    public (string Content, bool Bootstrapped) LoadPrompt(string agentId)
+    {
+        var path = PromptPath(agentId);
+        return File.Exists(path) ? (File.ReadAllText(path), false) : ("", true);
+    }
+
+    public void SavePrompt(string agentId, string content)
+    {
+        var path = PromptPath(agentId);
+        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+        File.WriteAllText(path, content);
+    }
+
+    private string PromptPath(string agentId) => Path.Combine(_configDir, "prompts", "agent", agentId + ".md");
+
+    private (T, bool) Load<T>(string fileName)
+    {
+        var real = Path.Combine(_configDir, fileName);
+        var bootstrapped = false;
+
+        if (!File.Exists(real))
+        {
+            var example = Path.Combine(_configDir,
+                Path.GetFileNameWithoutExtension(fileName) + ".example" + Path.GetExtension(fileName));
+            if (!File.Exists(example))
+                throw new InvalidOperationException(
+                    $"Neither '{fileName}' nor its example template exist in '{_configDir}'.");
+            File.Copy(example, real);
+            bootstrapped = true;
+        }
+
+        var data = JsonSerializer.Deserialize<T>(File.ReadAllText(real), ReadOptions)
+            ?? throw new InvalidOperationException($"'{fileName}' deserialized to null — check its contents.");
+        return (data, bootstrapped);
+    }
+
+    private void Save<T>(string fileName, T data)
+    {
+        var real = Path.Combine(_configDir, fileName);
+        File.WriteAllText(real, JsonSerializer.Serialize(data, WriteOptions));
+    }
+}

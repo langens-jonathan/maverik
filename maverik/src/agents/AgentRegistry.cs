@@ -11,13 +11,13 @@ public sealed class AgentRegistry
     private readonly Dictionary<string, AgentConfig> _agents = new();
     private readonly string _defaultAgent;
 
-    public AgentRegistry(AgentsFile file, string contentRootPath, ILogger<AgentRegistry> log)
+    public AgentRegistry(AgentsFile file, string configDir, ILogger<AgentRegistry> log)
     {
         _defaultAgent = file.DefaultAgent;
 
         foreach (var agent in file.Agents)
         {
-            ResolveSystemPrompt(agent, contentRootPath);
+            ResolveSystemPrompt(agent, configDir);
             _agents[agent.Id] = agent;
         }
 
@@ -42,12 +42,12 @@ public sealed class AgentRegistry
 
     // Inline systemPrompt wins; otherwise load prompts/agent/<id>.md. Having neither is a config
     // error (an agent must get its prompt from somewhere), surfaced with a clear message.
-    private static void ResolveSystemPrompt(AgentConfig agent, string contentRootPath)
+    private static void ResolveSystemPrompt(AgentConfig agent, string configDir)
     {
         if (!string.IsNullOrWhiteSpace(agent.SystemPrompt))
             return;
 
-        var path = Path.Combine(contentRootPath, "prompts", "agent", agent.Id + ".md");
+        var path = Path.Combine(configDir, "prompts", "agent", agent.Id + ".md");
         if (!File.Exists(path))
             throw new InvalidOperationException(
                 $"Agent '{agent.Id}' has no inline systemPrompt and no prompt file at '{path}'.");

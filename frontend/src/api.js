@@ -21,4 +21,20 @@ export const api = {
   listRuns: () => request("/api/maverik/runs"),
   getRun: (runId) => request(`/api/maverik/runs/${encodeURIComponent(runId)}`),
   getRunSummary: (runId) => request(`/api/maverik/runs/${encodeURIComponent(runId)}/summary`),
+
+  getAgentsConfig: () => request("/api/config/agents"),
+  saveAgentsConfig: (data) =>
+    request("/api/config/agents", { method: "PUT", body: JSON.stringify(data) }),
+  getLlmModelsConfig: () => request("/api/config/llm-models"),
+  saveLlmModelsConfig: (data) =>
+    request("/api/config/llm-models", { method: "PUT", body: JSON.stringify(data) }),
+  getMcpServersConfig: () => request("/api/config/mcp-servers"),
+  saveMcpServersConfig: (data) =>
+    request("/api/config/mcp-servers", { method: "PUT", body: JSON.stringify(data) }),
+  getPrompt: (agentId) => request(`/api/config/prompts/${encodeURIComponent(agentId)}`),
+  savePrompt: (agentId, content) =>
+    request(`/api/config/prompts/${encodeURIComponent(agentId)}`, {
+      method: "PUT",
+      body: JSON.stringify({ content }),
+    }),
 };
