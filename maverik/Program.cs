@@ -197,7 +197,7 @@ app.MapGet("/api/config/agents", (ConfigFileService cfg) =>
     return Results.Ok(new { bootstrapped, data });
 });
 
-app.MapPut("/api/config/agents", (AgentsFile data, ConfigFileService cfg) =>
+app.MapPut("/api/config/agents", (AgentsFile data, ConfigFileService cfg, AgentRegistry agentRegistry) =>
 {
     if (data.Agents.Any(a => string.IsNullOrWhiteSpace(a.Id)))
         return Results.BadRequest(new { error = "Every agent needs a non-empty id." });
@@ -208,7 +208,7 @@ app.MapPut("/api/config/agents", (AgentsFile data, ConfigFileService cfg) =>
         return Results.BadRequest(new { error = $"defaultAgent '{data.DefaultAgent}' is not in the agents list." });
 
     cfg.SaveAgents(data);
-    return Results.Ok(new { restartRequired = true });
+    return Results.Ok(ApplyAgentsReload(data, agentRegistry));
 });
 
 app.MapGet("/api/config/llm-models", (ConfigFileService cfg) =>
@@ -217,7 +217,7 @@ app.MapGet("/api/config/llm-models", (ConfigFileService cfg) =>
     return Results.Ok(new { bootstrapped, data });
 });
 
-app.MapPut("/api/config/llm-models", (LLMModelsConfig data, ConfigFileService cfg) =>
+app.MapPut("/api/config/llm-models", (LLMModelsConfig data, ConfigFileService cfg, LLMModelRegistry modelRegistry) =>
 {
     if (data.Models.Any(m => string.IsNullOrWhiteSpace(m.Id)))
         return Results.BadRequest(new { error = "Every model needs a non-empty id." });
@@ -228,7 +228,12 @@ app.MapPut("/api/config/llm-models", (LLMModelsConfig data, ConfigFileService cf
         return Results.BadRequest(new { error = $"defaultModelId '{data.DefaultModelId}' is not in the models list." });
 
     cfg.SaveLlmModels(data);
-    return Results.Ok(new { restartRequired = true });
+    var failures = modelRegistry.Reload(data.Models, data.DefaultModelId);
+    var message = failures.Count == 0
+        ? null
+        : $"Applied, but {failures.Count} model(s) failed to initialize and are unavailable: " +
+          string.Join("; ", failures.Select(f => $"{f.Id} ({f.Error})"));
+    return Results.Ok(new { applied = true, message, restartRequired = false });
 });
 
 app.MapGet("/api/config/mcp-servers", (ConfigFileService cfg) =>
@@ -246,7 +251,10 @@ app.MapPut("/api/config/mcp-servers", (McpServersFile data, ConfigFileService cf
         return Results.BadRequest(new { error = "MCP server names must be unique." });
 
     cfg.SaveMcpServers(data);
-    return Results.Ok(new { restartRequired = true });
+    // MCP servers hold live network connections (McpServerRegistry is also the hosted service
+    // that connects/disconnects them) — reconnecting safely while requests may be in flight is
+    // its own piece of work, deliberately not done here. Restart to pick this up.
+    return Results.Ok(new { applied = false, message = (string?)null, restartRequired = true });
 });
 
 // Per-agent system prompt file (config/prompts/agent/<id>.md). No example template exists for
@@ -258,10 +266,14 @@ app.MapGet("/api/config/prompts/{agentId}", (string agentId, ConfigFileService c
     return Results.Ok(new { bootstrapped, content });
 });
 
-app.MapPut("/api/config/prompts/{agentId}", (string agentId, PromptRequest request, ConfigFileService cfg) =>
+app.MapPut("/api/config/prompts/{agentId}", (string agentId, PromptRequest request, ConfigFileService cfg, AgentRegistry agentRegistry) =>
 {
     cfg.SavePrompt(agentId, request.Content ?? "");
-    return Results.Ok(new { restartRequired = true });
+    // Re-resolve every agent's effective prompt (including this one) from the current
+    // agents.json, so a prompt-file-only edit is picked up live the same way an agents.json
+    // edit is.
+    var (agentsFile, _) = cfg.LoadAgents();
+    return Results.Ok(ApplyAgentsReload(agentsFile, agentRegistry));
 });
 
 // List the loaded MAVERIK suites so a client can pick one to run. Question texts/criteria are
@@ -357,6 +369,29 @@ app.MapGet("/api/maverik/runs/{runId}/summary", (
         : Results.NotFound(new { error = $"No run '{runId}'." }));
 
 app.Run();
+
+// Shared by PUT /api/config/agents and PUT /api/config/prompts/{agentId} (the latter reloads
+// from the current on-disk agents.json rather than a new one, so a prompt-only edit also takes
+// effect immediately). AgentRegistry.Reload rolls back to the previous snapshot on failure (e.g.
+// a referenced prompt file is missing), so a bad edit never takes the host down — it just fails
+// to apply until fixed, which this reports back rather than throwing through to the client.
+static object ApplyAgentsReload(AgentsFile file, AgentRegistry agentRegistry)
+{
+    try
+    {
+        agentRegistry.Reload(file);
+        return new { applied = true, message = (string?)null, restartRequired = false };
+    }
+    catch (Exception ex)
+    {
+        return new
+        {
+            applied = false,
+            message = $"Saved to disk, but couldn't apply live: {ex.Message} The previous configuration is still active — fix the issue and save again.",
+            restartRequired = false
+        };
+    }
+}
 
 public record ChatRequest(string Message, string? Agent = null);
 

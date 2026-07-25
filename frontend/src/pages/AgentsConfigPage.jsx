@@ -23,7 +23,7 @@ export function AgentsConfigPage() {
   const [bootstrapped, setBootstrapped] = useState(false);
   const [loadError, setLoadError] = useState(null);
   const [saveError, setSaveError] = useState(null);
-  const [saved, setSaved] = useState(false);
+  const [result, setResult] = useState(null);
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
@@ -66,10 +66,10 @@ export function AgentsConfigPage() {
   async function save() {
     setSaving(true);
     setSaveError(null);
-    setSaved(false);
+    setResult(null);
     try {
-      await api.saveAgentsConfig(data);
-      setSaved(true);
+      const res = await api.saveAgentsConfig(data);
+      setResult(res);
       setBootstrapped(false);
     } catch (err) {
       setSaveError(err.message);
@@ -86,8 +86,8 @@ export function AgentsConfigPage() {
       <SaveNotice
         bootstrapped={bootstrapped}
         onDismissBootstrapped={() => setBootstrapped(false)}
-        saved={saved}
-        onDismissSaved={() => setSaved(false)}
+        result={result}
+        onDismissResult={() => setResult(null)}
       />
       {saveError && <p className="error-text">{saveError}</p>}
 

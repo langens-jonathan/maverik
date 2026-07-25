@@ -239,9 +239,16 @@ template to copy from — and if you skip that step, the app copies it for you: 
 first read, whether that read happens at container startup or from the dashboard's **Config**
 tab. The dashboard also lets you edit all three of those files, plus per-agent prompt files,
 through structured forms (`GET`/`PUT /api/config/agents`, `/llm-models`, `/mcp-servers`,
-`/prompts/{agentId}` — see API reference). Saves write straight to the files below; since every
-registry is built once at startup, **changes only take effect after `docker compose restart
-maverik`** (the dashboard says so after every save).
+`/prompts/{agentId}` — see API reference). Saves write straight to the files below.
+`agents.json`/prompts and `llm-models.json` edits **apply immediately, no restart needed** — the
+underlying registries rebuild themselves in place and swap in atomically, so an in-flight chat or
+benchmark run keeps using whatever it started with while new requests pick up the change. If the
+new config doesn't actually work (e.g. an agent with no system prompt anywhere, or a model with a
+bad endpoint), the file is still saved but the bad part is reported back and the previous
+in-memory config keeps serving — nothing crashes. `mcp-servers.json` is the one exception:
+`McpServerRegistry` also owns live connections to each server, and reconnecting safely while
+requests may be in flight is more involved, so **that one still needs `docker compose restart
+maverik`** after a save (the dashboard says so explicitly).
 
 | File | What it defines |
 | --- | --- |

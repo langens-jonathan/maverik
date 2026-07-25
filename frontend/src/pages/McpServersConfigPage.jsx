@@ -11,7 +11,7 @@ export function McpServersConfigPage() {
   const [bootstrapped, setBootstrapped] = useState(false);
   const [loadError, setLoadError] = useState(null);
   const [saveError, setSaveError] = useState(null);
-  const [saved, setSaved] = useState(false);
+  const [result, setResult] = useState(null);
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
@@ -82,10 +82,10 @@ export function McpServersConfigPage() {
   async function save() {
     setSaving(true);
     setSaveError(null);
-    setSaved(false);
+    setResult(null);
     try {
-      await api.saveMcpServersConfig(data);
-      setSaved(true);
+      const res = await api.saveMcpServersConfig(data);
+      setResult(res);
       setBootstrapped(false);
     } catch (err) {
       setSaveError(err.message);
@@ -102,8 +102,8 @@ export function McpServersConfigPage() {
       <SaveNotice
         bootstrapped={bootstrapped}
         onDismissBootstrapped={() => setBootstrapped(false)}
-        saved={saved}
-        onDismissSaved={() => setSaved(false)}
+        result={result}
+        onDismissResult={() => setResult(null)}
       />
       {saveError && <p className="error-text">{saveError}</p>}
 

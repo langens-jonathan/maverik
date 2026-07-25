@@ -9,7 +9,7 @@ export function PromptsConfigPage() {
   const [bootstrapped, setBootstrapped] = useState(false);
   const [loadError, setLoadError] = useState(null);
   const [saveError, setSaveError] = useState(null);
-  const [saved, setSaved] = useState(false);
+  const [result, setResult] = useState(null);
   const [saving, setSaving] = useState(false);
   const [loadingPrompt, setLoadingPrompt] = useState(false);
 
@@ -27,7 +27,7 @@ export function PromptsConfigPage() {
   useEffect(() => {
     if (!selected) return;
     setLoadingPrompt(true);
-    setSaved(false);
+    setResult(null);
     setSaveError(null);
     api
       .getPrompt(selected)
@@ -42,10 +42,10 @@ export function PromptsConfigPage() {
   async function save() {
     setSaving(true);
     setSaveError(null);
-    setSaved(false);
+    setResult(null);
     try {
-      await api.savePrompt(selected, content);
-      setSaved(true);
+      const res = await api.savePrompt(selected, content);
+      setResult(res);
       setBootstrapped(false);
     } catch (err) {
       setSaveError(err.message);
@@ -73,8 +73,8 @@ export function PromptsConfigPage() {
       <SaveNotice
         bootstrapped={bootstrapped}
         onDismissBootstrapped={() => setBootstrapped(false)}
-        saved={saved}
-        onDismissSaved={() => setSaved(false)}
+        result={result}
+        onDismissResult={() => setResult(null)}
       />
       {saveError && <p className="error-text">{saveError}</p>}
 
