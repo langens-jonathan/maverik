@@ -408,6 +408,17 @@ progress::-webkit-progress-value { background: var(--accent); border-radius: 3px
 .config-toolbar { display: flex; align-items: center; gap: 0.8rem; margin-bottom: 1.1rem; }
 .config-toolbar .spacer { flex: 1; }
 
+.reporting-layout { display: flex; gap: 1.5rem; align-items: flex-start; }
+.reporting-file-list { display: flex; flex-direction: column; gap: 0.4rem; min-width: 180px; }
+.reporting-file-list button { text-align: left; }
+.reporting-file-list button.secondary.active { background: var(--accent-wash); color: var(--accent); border-color: var(--accent); }
+.reporting-preview { flex: 1; min-width: 0; }
+.reporting-preview h4 { margin: 0.9rem 0 0.5rem; font-size: 0.8rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; }
+.run-picker { display: flex; flex-direction: column; gap: 0.35rem; margin-bottom: 1rem; font-size: 0.85rem; }
+.run-picker-row { display: flex; align-items: center; gap: 0.5rem; cursor: pointer; }
+.visualization { margin-top: 0.5rem; }
+.visualization-container { overflow-x: auto; }
+
 .config-row {
   border: 1px solid var(--border-faint);
   border-radius: var(--radius);

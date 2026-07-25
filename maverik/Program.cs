@@ -363,11 +363,11 @@ app.MapGet("/api/maverik/suites/{suiteId}", (string suiteId, MaverikSuiteRegistr
 // validation (question ids, criterion shape, agent/judge-model references) is NOT duplicated
 // here — it's whatever MaverikSuiteRegistry's Reload() already enforces when rebuilding from
 // disk, reported back the same "saved to disk, applied live or not" way as agents.json edits.
-var suiteIdPattern = new Regex("^[a-zA-Z0-9_-]+$");
+var idPattern = new Regex("^[a-zA-Z0-9_-]+$");
 
 app.MapPost("/api/maverik/suites", (MaverikSuite data, ConfigFileService cfg, MaverikSuiteRegistry suites) =>
 {
-    if (string.IsNullOrWhiteSpace(data.Id) || !suiteIdPattern.IsMatch(data.Id))
+    if (string.IsNullOrWhiteSpace(data.Id) || !idPattern.IsMatch(data.Id))
         return Results.BadRequest(new { error = "Suite id must be non-empty and contain only letters, digits, '-', '_'." });
     if (cfg.SuiteExists(data.Id))
         return Results.Conflict(new { error = $"A suite with id '{data.Id}' already exists." });
@@ -378,7 +378,7 @@ app.MapPost("/api/maverik/suites", (MaverikSuite data, ConfigFileService cfg, Ma
 
 app.MapPut("/api/maverik/suites/{suiteId}", (string suiteId, MaverikSuite data, ConfigFileService cfg, MaverikSuiteRegistry suites) =>
 {
-    if (!suiteIdPattern.IsMatch(suiteId))
+    if (!idPattern.IsMatch(suiteId))
         return Results.BadRequest(new { error = "Invalid suite id." });
     if (data.Id != suiteId)
         return Results.BadRequest(new { error = $"Body id '{data.Id}' does not match URL id '{suiteId}' — renaming isn't supported here, delete and re-create instead." });
@@ -391,7 +391,7 @@ app.MapPut("/api/maverik/suites/{suiteId}", (string suiteId, MaverikSuite data, 
 
 app.MapDelete("/api/maverik/suites/{suiteId}", (string suiteId, ConfigFileService cfg, MaverikSuiteRegistry suites) =>
 {
-    if (!suiteIdPattern.IsMatch(suiteId))
+    if (!idPattern.IsMatch(suiteId))
         return Results.BadRequest(new { error = "Invalid suite id." });
     if (!cfg.SuiteExists(suiteId))
         return Results.NotFound(new { error = $"No suite '{suiteId}'." });
@@ -399,6 +399,27 @@ app.MapDelete("/api/maverik/suites/{suiteId}", (string suiteId, ConfigFileServic
     cfg.DeleteSuite(suiteId);
     suites.Reload(); // removing a suite can't invalidate the registry; nothing to roll back
     return Results.NoContent();
+});
+
+// --- Reporting: visualizations (read-only) ---
+// Visualization functions live under config/reporting/visualizations/<id>.js, authored and
+// edited directly on disk (config/ is already bind-mounted read-write) — there is no PUT here,
+// only listing/reading so the dashboard can list what exists and preview it against real run
+// data. See config/reporting/README.md for the (container, data, { d3 }) function contract these
+// files must follow, including the no-sandbox discipline (container-only, no globals/network)
+// that keeps a future move to iframe-sandboxed execution cheap. No separate "graph"/"table"
+// endpoint split — the contract is identical either way, so there's nothing to distinguish here.
+app.MapGet("/api/reporting/visualizations", (ConfigFileService cfg) =>
+    Results.Ok(cfg.ListVisualizations().Select(f => new { id = f.Id, modifiedAt = f.ModifiedAt })));
+
+app.MapGet("/api/reporting/visualizations/{id}", (string id, ConfigFileService cfg) =>
+{
+    if (!idPattern.IsMatch(id))
+        return Results.BadRequest(new { error = "Invalid visualization id." });
+    var content = cfg.ReadVisualization(id);
+    return content is not null
+        ? Results.Text(content, "text/javascript")
+        : Results.NotFound(new { error = $"No visualization '{id}'." });
 });
 
 // Start a benchmark run. All ids are validated HERE so mistakes fail at request time with a

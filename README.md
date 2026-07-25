@@ -219,12 +219,13 @@ runs both; the frontend is a static build served by nginx, and it talks to `mave
 directly from your browser (not container-to-container), so no MCP-style networking concerns
 apply here.
 
-It gives you four views: **Test plans** (a suite's questions and criteria — the test plan
-itself), a **run form** on each test plan (pick agents/repetitions, start a run), **Runs**
-(live progress while a run executes, then the per-agent comparison — pass rate, duration,
-tokens, estimated cost — plus a per-case results table once it's done), and **Config**
-(structured editors for `agents.json`, `llm-models.json`, `mcp-servers.json`, and per-agent
-prompt files — see Configuration below).
+It gives you: **Test plans** (a suite's questions and criteria — the test plan itself), a **run
+form** on each test plan (pick agents/repetitions, start a run), **Runs** (live progress while a
+run executes, then the per-agent comparison — pass rate, duration, tokens, estimated cost — plus
+a per-case results table once it's done), **Config** (structured editors for `agents.json`,
+`llm-models.json`, `mcp-servers.json`, MAVERIK suites, tool costs, and per-agent prompt files —
+see Configuration below), and **Reporting** (visualizations previewed against real run data —
+see [Reporting](#-reporting) below; still growing).
 
 Because the API URL is baked into the static build at image-build time (Vite's `VITE_API_BASE_URL`,
 set via the `args:` block in `docker-compose.yml`), if you change `maverik`'s published port from
@@ -259,6 +260,7 @@ maverik`** after a save (the dashboard says so explicitly).
 | `config/agents.json` | The agent configurations under test. Copy from `config/agents.example.json`. |
 | `config/maverik-suites/*.json` | Test suites: questions, criteria, default agent set, judge model. |
 | `config/prompts/agent/<id>.md` | An agent's system prompt, when not defined inline. |
+| `config/reporting/visualizations/<id>.js` | Visualization functions, authored directly on disk (no PUT/UI editor) — see [Reporting](#-reporting). |
 
 Both `mcp-servers.json` headers and `llm-models.json`'s `apiKey` share the same `${VAR_NAME}`
 expansion (`maverik/src/config/EnvExpansion.cs`): a variable referenced but not defined in
@@ -454,6 +456,9 @@ A minimal reference client lives under `wwwroot/` — open `http://localhost:508
 | GET | `/api/maverik/runs` | List runs with state and progress. |
 | GET | `/api/maverik/runs/{id}` | Full run status incl. per-case results (poll while running). |
 | GET | `/api/maverik/runs/{id}/summary` | Per-agent aggregates + cost estimates + judge overhead. |
+| GET | `/api/maverik/suite-runs?suiteId=` | List persisted per-(suite, agent, timestamp) result records — the data [Reporting](#-reporting) visualizations consume. |
+| GET | `/api/reporting/visualizations` | List available visualizations (id + last-modified). |
+| GET | `/api/reporting/visualizations/{id}` | Raw JS source of one visualization — see [Reporting](#-reporting). |
 | POST | `/api/session` | Establish a chat session cookie. |
 | POST | `/api/chat` | Enqueue a chat message for an agent. |
 | GET | `/api/messages` | Drain buffered chat messages for the session. |
@@ -484,6 +489,38 @@ the full picture.
 
 There's no UI yet to browse what's been logged — for now, read the files directly under `logs/`.
 A viewer is planned.
+
+## 📈 Reporting
+
+The dashboard's **Reporting** tab lets you define reusable **visualizations** — small JavaScript
+functions you write yourself, rendering either a chart or a table (there's no separate "table"
+type — both have the identical contract, so it's just a matter of what a given function draws) —
+and preview them against real MAVERIK results. This is the data-visualization layer for comparing
+runs; **dashboards** (composing several visualizations into titled sections) and **reports**
+(filtering/selecting suite-runs to feed a dashboard) build on top of it but don't exist yet.
+
+A visualization is a file under `config/reporting/visualizations/<id>.js`, id = filename. Unlike
+every other editable config in MAVERIK, **there's no PUT endpoint or in-app editor for these** —
+write/edit them directly on disk (`config/` is already bind-mounted read-write), then refresh the
+Reporting tab. Every file's default export follows one fixed contract:
+
+```js
+export default function (container, data, { d3 }) {
+  // container: an empty <div> the dashboard created for this visualization — render into it.
+  // data: an array of SuiteRunRecord (results/suite-runs/*.json).
+  // { d3 }: the library the host injects — don't `import` anything yourself.
+}
+```
+
+Execution happens entirely in the browser (fetch the raw source, dynamic-`import()` it from a
+`Blob` URL) and is **deliberately not sandboxed** — MAVERIK is a self-hosted, single-user tool,
+so this is trusted the same way system prompts and suite definitions already are. The one rule to
+follow anyway: only touch `container` and the arguments you're given — no `window`/`document`
+reach-out, no `fetch`. That discipline is what would keep a future move to iframe-sandboxed
+execution a plumbing change instead of a rewrite of every visualization you've written. See
+`config/reporting/README.md` and the two shipped examples (`avg-duration-by-agent.js`, a D3 bar
+chart, and `results-table.js`, a plain `<table>`) for the full contract and a working starting
+point.
 
 ## 🎛️ The JMeter analogy, fleshed out
 
@@ -546,8 +583,10 @@ you defined up front, whether the change actually helped or just moved the cost 
 ### Result analysis and visibility
 
 - **Statistical rigor** — percentiles and std-dev over repetitions, flakiness detection.
-- **Pass-rate trends over time** — now that a per-run summary exists, chart it across runs of
-  the same suite, not just within one.
+- **Dashboards and reports** — [Reporting](#-reporting) ships the visualization building block
+  (custom JS charts/tables, previewable against real run data) and the persisted per-run
+  records to feed them; composing several into a titled dashboard, and a filter/select-runs →
+  dashboard "report" flow on top, is the next layer.
 
 ### Other
 

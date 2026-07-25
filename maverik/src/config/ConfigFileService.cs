@@ -74,6 +74,30 @@ public sealed class ConfigFileService
 
     private string PromptPath(string agentId) => Path.Combine(_configDir, "prompts", "agent", agentId + ".md");
 
+    // Visualization functions (config/reporting/visualizations/<id>.js) are authored and edited
+    // directly on disk — config/ is already bind-mounted read-write, and there's no PUT for
+    // these, only listing/reading so the dashboard can show what exists and preview it against
+    // real run data. See config/reporting/README.md for the function contract these files follow.
+    // No separate "graph" vs "table" concept — the signature is identical either way, it's just a
+    // matter of what a given function draws into its container.
+    public IReadOnlyList<(string Id, DateTimeOffset ModifiedAt)> ListVisualizations()
+    {
+        var dir = Path.Combine(_configDir, "reporting", "visualizations");
+        if (!Directory.Exists(dir))
+            return Array.Empty<(string, DateTimeOffset)>();
+
+        return Directory.GetFiles(dir, "*.js")
+            .Select(path => (Path.GetFileNameWithoutExtension(path), (DateTimeOffset)File.GetLastWriteTimeUtc(path)))
+            .OrderBy(f => f.Item1, StringComparer.Ordinal)
+            .ToList();
+    }
+
+    public string? ReadVisualization(string id)
+    {
+        var path = Path.Combine(_configDir, "reporting", "visualizations", id + ".js");
+        return File.Exists(path) ? File.ReadAllText(path) : null;
+    }
+
     private (T, bool) Load<T>(string fileName)
     {
         var real = Path.Combine(_configDir, fileName);

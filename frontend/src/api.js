@@ -14,6 +14,17 @@ async function request(path, options) {
   return res.status === 204 ? null : res.json();
 }
 
+// For the raw JS source of a visualization (see VisualizationRenderer) — not JSON.
+async function requestText(path) {
+  const res = await fetch(`${API_BASE}${path}`);
+  if (!res.ok) {
+    const err = new Error(`${res.status} ${res.statusText}`);
+    err.status = res.status;
+    throw err;
+  }
+  return res.text();
+}
+
 export const api = {
   listSuites: () => request("/api/maverik/suites"),
   getSuite: (suiteId) => request(`/api/maverik/suites/${encodeURIComponent(suiteId)}`),
@@ -45,6 +56,12 @@ export const api = {
 
   getDevMode: () => request("/api/dev-mode"),
   setDevMode: (enabled) => request("/api/dev-mode", { method: "POST", body: JSON.stringify({ enabled }) }),
+
+  listSuiteRuns: (suiteId) =>
+    request(`/api/maverik/suite-runs${suiteId ? `?suiteId=${encodeURIComponent(suiteId)}` : ""}`),
+
+  listVisualizations: () => request("/api/reporting/visualizations"),
+  getVisualization: (id) => requestText(`/api/reporting/visualizations/${encodeURIComponent(id)}`),
 
   createSuite: (data) => request("/api/maverik/suites", { method: "POST", body: JSON.stringify(data) }),
   updateSuite: (suiteId, data) =>

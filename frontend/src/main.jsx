@@ -13,6 +13,9 @@ import { McpServersConfigPage } from "./pages/McpServersConfigPage.jsx";
 import { ToolCostsConfigPage } from "./pages/ToolCostsConfigPage.jsx";
 import { SuitesConfigPage } from "./pages/SuitesConfigPage.jsx";
 import { PromptsConfigPage } from "./pages/PromptsConfigPage.jsx";
+import { ReportingPage } from "./pages/ReportingPage.jsx";
+import { VisualizationsPage } from "./pages/VisualizationsPage.jsx";
+import { ReportingComingSoonPage } from "./pages/ReportingComingSoonPage.jsx";
 import { NotFound } from "./components/NotFound.jsx";
 import "./styles.css";
 
@@ -34,6 +37,12 @@ ReactDOM.createRoot(document.getElementById("root")).render(
             <Route path="tool-costs" element={<ToolCostsConfigPage />} />
             <Route path="suites" element={<SuitesConfigPage />} />
             <Route path="prompts" element={<PromptsConfigPage />} />
+          </Route>
+          <Route path="reporting" element={<ReportingPage />}>
+            <Route index element={<Navigate to="/reporting/reports" replace />} />
+            <Route path="reports" element={<ReportingComingSoonPage label="Reports" />} />
+            <Route path="dashboards" element={<ReportingComingSoonPage label="Dashboards" />} />
+            <Route path="visualizations" element={<VisualizationsPage />} />
           </Route>
           <Route path="*" element={<NotFound message="Page not found." />} />
         </Route>
