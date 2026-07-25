@@ -9,11 +9,11 @@
       // must stay in sync with THEME_STORAGE_KEY/THEMES in src/hooks/useTheme.js.
       (function () {
         try {
-          var known = ["spacemacs", "terminal-clay", "ops-console", "ledger"];
+          var known = ["ops-console", "spacemacs", "terminal-clay", "ledger"];
           var stored = localStorage.getItem("maverik-theme");
-          document.documentElement.dataset.theme = known.indexOf(stored) !== -1 ? stored : "spacemacs";
+          document.documentElement.dataset.theme = known.indexOf(stored) !== -1 ? stored : "ops-console";
         } catch (e) {
-          document.documentElement.dataset.theme = "spacemacs";
+          document.documentElement.dataset.theme = "ops-console";
         }
       })();
     </script>

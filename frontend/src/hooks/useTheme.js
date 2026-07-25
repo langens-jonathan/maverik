@@ -3,9 +3,9 @@ import { useEffect, useState } from "react";
 export const THEME_STORAGE_KEY = "maverik-theme";
 
 export const THEMES = [
+  { id: "ops-console", label: "Ops Console" },
   { id: "spacemacs", label: "Spacemacs" },
   { id: "terminal-clay", label: "Terminal Clay" },
-  { id: "ops-console", label: "Ops Console" },
   { id: "ledger", label: "Ledger" },
 ];
 

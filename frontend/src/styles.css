@@ -1,10 +1,9 @@
 /* Four dark themes, same token names throughout — components below only ever reference the
    custom properties, never a literal color, so switching themes is just switching which block
-   is active (see App.jsx: sets [data-theme] on <html>, persisted to localStorage). Spacemacs is
+   is active (see App.jsx: sets [data-theme] on <html>, persisted to localStorage). Ops Console is
    the default/fallback (:root), so an unrecognized or missing theme value still renders
    correctly. */
 
-:root,
 [data-theme="spacemacs"] {
   /* Ported from the real Spacemacs editor's own dark theme (nashamri/spacemacs-theme,
      spacemacs-theme.el) — bg1/bg2/base/border/etc. below are that file's actual color values,
@@ -72,6 +71,7 @@
   --radius: 6px;
 }
 
+:root,
 [data-theme="ops-console"] {
   --bg: #0b0e13;
   --surface: #10141b;
