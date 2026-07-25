@@ -25,10 +25,10 @@ export function RunsPage() {
           <tbody>
             {runs.map((r) => (
               <tr key={r.runId}>
-                <td>
+                <td className="mono">
                   <Link to={`/runs/${encodeURIComponent(r.runId)}`}>{r.runId}</Link>
                 </td>
-                <td>{r.suiteId}</td>
+                <td className="mono">{r.suiteId}</td>
                 <td>
                   <span className={`badge state-${r.state}`}>{r.state}</span>
                 </td>

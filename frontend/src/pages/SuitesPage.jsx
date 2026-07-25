@@ -25,8 +25,15 @@ export function SuitesPage() {
           <p>{suite.description}</p>
           <p className="muted">
             {suite.questionCount} question{suite.questionCount === 1 ? "" : "s"} · default
-            agents: {suite.agents.join(", ") || "none"}
-            {suite.judgeModel ? ` · judge: ${suite.judgeModel}` : ""}
+            agents: <span className="mono">{suite.agents.join(", ") || "none"}</span>
+            {suite.judgeModel ? (
+              <>
+                {" "}
+                · judge: <span className="mono">{suite.judgeModel}</span>
+              </>
+            ) : (
+              ""
+            )}
           </p>
         </div>
       ))}

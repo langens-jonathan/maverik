@@ -50,10 +50,11 @@ export function RunDetailPage() {
       <p>
         <Link to="/runs">&larr; Runs</Link>
       </p>
-      <h2>{run.runId}</h2>
+      <h2 className="mono">{run.runId}</h2>
       <div className="card">
         <p>
-          Suite <strong>{run.suiteId}</strong> · <span className={`badge state-${run.state}`}>{run.state}</span>
+          Suite <strong className="mono">{run.suiteId}</strong> ·{" "}
+          <span className={`badge state-${run.state}`}>{run.state}</span>
         </p>
         <p>
           {run.completedCases}/{run.totalCases} cases
@@ -138,14 +139,14 @@ export function RunDetailPage() {
               return (
                 <Fragment key={key}>
                   <tr onClick={() => setExpanded(isOpen ? null : key)} style={{ cursor: "pointer" }}>
-                    <td>{c.agentId}</td>
-                    <td>{c.questionId}</td>
-                    <td>{c.repetition}</td>
-                    <td>{fmtMs(c.durationMs)}</td>
-                    <td>
+                    <td className="mono">{c.agentId}</td>
+                    <td className="mono">{c.questionId}</td>
+                    <td className="mono">{c.repetition}</td>
+                    <td className="mono">{fmtMs(c.durationMs)}</td>
+                    <td className="mono">
                       {fmtTokens(c.inputTokens)}/{fmtTokens(c.outputTokens)}
                     </td>
-                    <td>{c.toolCallCount}</td>
+                    <td className="mono">{c.toolCallCount}</td>
                     <td>
                       {c.error ? (
                         <span className="badge error">error</span>

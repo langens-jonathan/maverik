@@ -90,7 +90,7 @@ export function SuiteDetailPage() {
           <tbody>
             {suite.questions.map((q) => (
               <tr key={q.id}>
-                <td>{q.id}</td>
+                <td className="mono">{q.id}</td>
                 <td>{q.text}</td>
                 <td>
                   <span className="criterion-type">{q.criterion.type}</span>
