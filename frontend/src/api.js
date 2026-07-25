@@ -63,6 +63,14 @@ export const api = {
   listVisualizations: () => request("/api/reporting/visualizations"),
   getVisualization: (id) => requestText(`/api/reporting/visualizations/${encodeURIComponent(id)}`),
 
+  listDashboards: () => request("/api/reporting/dashboards"),
+  createDashboard: (data) =>
+    request("/api/reporting/dashboards", { method: "POST", body: JSON.stringify(data) }),
+  updateDashboard: (id, data) =>
+    request(`/api/reporting/dashboards/${encodeURIComponent(id)}`, { method: "PUT", body: JSON.stringify(data) }),
+  deleteDashboard: (id) =>
+    request(`/api/reporting/dashboards/${encodeURIComponent(id)}`, { method: "DELETE" }),
+
   createSuite: (data) => request("/api/maverik/suites", { method: "POST", body: JSON.stringify(data) }),
   updateSuite: (suiteId, data) =>
     request(`/api/maverik/suites/${encodeURIComponent(suiteId)}`, { method: "PUT", body: JSON.stringify(data) }),

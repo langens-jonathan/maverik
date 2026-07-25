@@ -3,6 +3,7 @@ using McpHost.Agents;
 using McpHost.LlmModel;
 using McpHost.Maverik;
 using McpHost.Mcp;
+using McpHost.Reporting;
 
 namespace McpHost.Config;
 
@@ -97,6 +98,44 @@ public sealed class ConfigFileService
         var path = Path.Combine(_configDir, "reporting", "visualizations", id + ".js");
         return File.Exists(path) ? File.ReadAllText(path) : null;
     }
+
+    // One file per dashboard under reporting/dashboards/, same one-file-per-id pattern as suites
+    // — no bootstrap-from-example (dashboards are real authored content, not secrets), and no
+    // registry: dashboards aren't read on any hot path, so callers just read fresh each request.
+    public IReadOnlyList<DashboardConfig> ListDashboards()
+    {
+        var dir = Path.Combine(_configDir, "reporting", "dashboards");
+        if (!Directory.Exists(dir))
+            return Array.Empty<DashboardConfig>();
+
+        return Directory.GetFiles(dir, "*.json")
+            .Select(path => JsonSerializer.Deserialize<DashboardConfig>(File.ReadAllText(path), ReadOptions))
+            .Where(d => d is not null)
+            .Select(d => d!)
+            .OrderBy(d => d.Id, StringComparer.Ordinal)
+            .ToList();
+    }
+
+    public DashboardConfig? LoadDashboard(string id)
+    {
+        var path = DashboardPath(id);
+        return File.Exists(path)
+            ? JsonSerializer.Deserialize<DashboardConfig>(File.ReadAllText(path), ReadOptions)
+            : null;
+    }
+
+    public bool DashboardExists(string id) => File.Exists(DashboardPath(id));
+
+    public void SaveDashboard(string id, DashboardConfig data)
+    {
+        var path = DashboardPath(id);
+        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+        File.WriteAllText(path, JsonSerializer.Serialize(data, WriteOptions));
+    }
+
+    public void DeleteDashboard(string id) => File.Delete(DashboardPath(id));
+
+    private string DashboardPath(string id) => Path.Combine(_configDir, "reporting", "dashboards", id + ".json");
 
     private (T, bool) Load<T>(string fileName)
     {

@@ -224,8 +224,8 @@ form** on each test plan (pick agents/repetitions, start a run), **Runs** (live 
 run executes, then the per-agent comparison — pass rate, duration, tokens, estimated cost — plus
 a per-case results table once it's done), **Config** (structured editors for `agents.json`,
 `llm-models.json`, `mcp-servers.json`, MAVERIK suites, tool costs, and per-agent prompt files —
-see Configuration below), and **Reporting** (visualizations previewed against real run data —
-see [Reporting](#-reporting) below; still growing).
+see Configuration below), and **Reporting** (visualizations, composed into dashboards — see
+[Reporting](#-reporting) below; still growing).
 
 Because the API URL is baked into the static build at image-build time (Vite's `VITE_API_BASE_URL`,
 set via the `args:` block in `docker-compose.yml`), if you change `maverik`'s published port from
@@ -261,6 +261,7 @@ maverik`** after a save (the dashboard says so explicitly).
 | `config/maverik-suites/*.json` | Test suites: questions, criteria, default agent set, judge model. |
 | `config/prompts/agent/<id>.md` | An agent's system prompt, when not defined inline. |
 | `config/reporting/visualizations/<id>.js` | Visualization functions, authored directly on disk (no PUT/UI editor) — see [Reporting](#-reporting). |
+| `config/reporting/dashboards/<id>.json` | Dashboards: sections of visualizations, editable via `Reporting > Dashboards` — see [Dashboards](#dashboards). |
 
 Both `mcp-servers.json` headers and `llm-models.json`'s `apiKey` share the same `${VAR_NAME}`
 expansion (`maverik/src/config/EnvExpansion.cs`): a variable referenced but not defined in
@@ -459,6 +460,9 @@ A minimal reference client lives under `wwwroot/` — open `http://localhost:508
 | GET | `/api/maverik/suite-runs?suiteId=` | List persisted per-(suite, agent, timestamp) result records — the data [Reporting](#-reporting) visualizations consume. |
 | GET | `/api/reporting/visualizations` | List available visualizations (id + last-modified). |
 | GET | `/api/reporting/visualizations/{id}` | Raw JS source of one visualization — see [Reporting](#-reporting). |
+| GET | `/api/reporting/dashboards` | List all dashboards (full definitions, not just ids). |
+| GET | `/api/reporting/dashboards/{id}` | Full detail of one dashboard: title + sections + visualization refs. |
+| POST/PUT/DELETE | `/api/reporting/dashboards[/{id}]` | Create/update/delete a dashboard — see [Dashboards](#dashboards). |
 | POST | `/api/session` | Establish a chat session cookie. |
 | POST | `/api/chat` | Enqueue a chat message for an agent. |
 | GET | `/api/messages` | Drain buffered chat messages for the session. |
@@ -496,8 +500,9 @@ The dashboard's **Reporting** tab lets you define reusable **visualizations** �
 functions you write yourself, rendering either a chart or a table (there's no separate "table"
 type — both have the identical contract, so it's just a matter of what a given function draws) —
 and preview them against real MAVERIK results. This is the data-visualization layer for comparing
-runs; **dashboards** (composing several visualizations into titled sections) and **reports**
-(filtering/selecting suite-runs to feed a dashboard) build on top of it but don't exist yet.
+runs. **Dashboards** compose several visualizations into titled sections — see below.
+**Reports** (filtering/selecting suite-runs, then feeding them into a dashboard) build on top of
+both but don't exist yet.
 
 A visualization is a file under `config/reporting/visualizations/<id>.js`, id = filename. Unlike
 every other editable config in MAVERIK, **there's no PUT endpoint or in-app editor for these** —
@@ -521,6 +526,22 @@ execution a plumbing change instead of a rewrite of every visualization you've w
 `config/reporting/README.md` and the two shipped examples (`avg-duration-by-agent.js`, a D3 bar
 chart, and `results-table.js`, a plain `<table>`) for the full contract and a working starting
 point.
+
+### Dashboards
+
+A dashboard has a title and an ordered list of **sections**, each with its own title and a list
+of visualization references (a visualization id plus an optional per-instance caption). Unlike
+every other config type in MAVERIK, dashboards **aren't editable-config-with-a-registry** — they
+have full CRUD through the dashboard (`Reporting > Dashboards`, or `GET/POST/PUT/DELETE
+/api/reporting/dashboards[/{id}]` directly), one JSON file per dashboard under
+`config/reporting/dashboards/<id>.json`, but there's no hot-reload machinery behind it because
+dashboards are never read on a hot path — every request just reads the file straight off disk.
+Saving validates that every visualization a dashboard references actually exists.
+
+The dashboard editor doubles as a preview: pick one or more suite-runs and every section renders
+live via the same visualization-execution mechanism as the Visualizations tab — no need to save
+first, since a dashboard is just a client-side composition of files and run data you already have
+locally while editing.
 
 ## 🎛️ The JMeter analogy, fleshed out
 
@@ -583,10 +604,10 @@ you defined up front, whether the change actually helped or just moved the cost 
 ### Result analysis and visibility
 
 - **Statistical rigor** — percentiles and std-dev over repetitions, flakiness detection.
-- **Dashboards and reports** — [Reporting](#-reporting) ships the visualization building block
-  (custom JS charts/tables, previewable against real run data) and the persisted per-run
-  records to feed them; composing several into a titled dashboard, and a filter/select-runs →
-  dashboard "report" flow on top, is the next layer.
+- **Reports** — [Reporting](#-reporting) ships the visualization building block and
+  [dashboards](#dashboards) that compose them into titled sections; a "report" layer on top
+  (filter/select suite-runs by suite + time range, then feed the selection into a chosen
+  dashboard) is next.
 
 ### Other
 

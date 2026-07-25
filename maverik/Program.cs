@@ -9,6 +9,7 @@ using McpHost.LlmModel;
 using McpHost.Loop;
 using McpHost.Maverik;
 using McpHost.Mcp;
+using McpHost.Reporting;
 using Microsoft.Extensions.AI;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -422,6 +423,59 @@ app.MapGet("/api/reporting/visualizations/{id}", (string id, ConfigFileService c
         : Results.NotFound(new { error = $"No visualization '{id}'." });
 });
 
+// --- Reporting: dashboards (full CRUD) ---
+// A dashboard composes visualizations into titled sections. One file per id under
+// config/reporting/dashboards/, same pattern as suites — but dashboards aren't read on any hot
+// path, so unlike agents/llm-models/mcp-servers/suites there's no registry to reload; GET/PUT
+// just read/write the file directly. Every visualization ref is checked against what's actually
+// on disk at save time so a dashboard can't reference a visualization that doesn't exist.
+app.MapGet("/api/reporting/dashboards", (ConfigFileService cfg) =>
+    Results.Ok(cfg.ListDashboards()));
+
+app.MapGet("/api/reporting/dashboards/{id}", (string id, ConfigFileService cfg) =>
+    cfg.LoadDashboard(id) is { } dashboard
+        ? Results.Ok(dashboard)
+        : Results.NotFound(new { error = $"No dashboard '{id}'." }));
+
+app.MapPost("/api/reporting/dashboards", (DashboardConfig data, ConfigFileService cfg) =>
+{
+    if (string.IsNullOrWhiteSpace(data.Id) || !idPattern.IsMatch(data.Id))
+        return Results.BadRequest(new { error = "Dashboard id must be non-empty and contain only letters, digits, '-', '_'." });
+    if (cfg.DashboardExists(data.Id))
+        return Results.Conflict(new { error = $"A dashboard with id '{data.Id}' already exists." });
+    if (ValidateDashboard(data, cfg) is { } error)
+        return error;
+
+    cfg.SaveDashboard(data.Id, data);
+    return Results.Created($"/api/reporting/dashboards/{data.Id}", data);
+});
+
+app.MapPut("/api/reporting/dashboards/{id}", (string id, DashboardConfig data, ConfigFileService cfg) =>
+{
+    if (!idPattern.IsMatch(id))
+        return Results.BadRequest(new { error = "Invalid dashboard id." });
+    if (data.Id != id)
+        return Results.BadRequest(new { error = $"Body id '{data.Id}' does not match URL id '{id}' — renaming isn't supported here, delete and re-create instead." });
+    if (!cfg.DashboardExists(id))
+        return Results.NotFound(new { error = $"No dashboard '{id}'." });
+    if (ValidateDashboard(data, cfg) is { } error)
+        return error;
+
+    cfg.SaveDashboard(id, data);
+    return Results.Ok(data);
+});
+
+app.MapDelete("/api/reporting/dashboards/{id}", (string id, ConfigFileService cfg) =>
+{
+    if (!idPattern.IsMatch(id))
+        return Results.BadRequest(new { error = "Invalid dashboard id." });
+    if (!cfg.DashboardExists(id))
+        return Results.NotFound(new { error = $"No dashboard '{id}'." });
+
+    cfg.DeleteDashboard(id);
+    return Results.NoContent();
+});
+
 // Start a benchmark run. All ids are validated HERE so mistakes fail at request time with a
 // 400, not mid-run; the runner can then assume a well-formed request. Returns { runId }
 // immediately — results arrive by polling the endpoints below.
@@ -545,6 +599,26 @@ static object ApplyAgentsReload(AgentsFile file, AgentRegistry agentRegistry)
             restartRequired = false
         };
     }
+}
+
+// Shared by POST/PUT /api/reporting/dashboards. Unlike the Apply*Reload helpers above there's no
+// registry to roll back to — dashboards are read fresh from disk each time — so this only checks
+// that every visualization a dashboard references actually exists on disk before it gets saved.
+static IResult? ValidateDashboard(DashboardConfig data, ConfigFileService cfg)
+{
+    if (string.IsNullOrWhiteSpace(data.Title))
+        return Results.BadRequest(new { error = "Dashboard needs a non-empty title." });
+
+    var missingRefs = data.Sections
+        .SelectMany(s => s.Visualizations)
+        .Select(v => v.Ref)
+        .Distinct()
+        .Where(r => string.IsNullOrWhiteSpace(r) || cfg.ReadVisualization(r) is null)
+        .ToList();
+    if (missingRefs.Count > 0)
+        return Results.BadRequest(new { error = $"Unknown visualization id(s): {string.Join(", ", missingRefs)}" });
+
+    return null;
 }
 
 // Shared by POST/PUT /api/maverik/suites. MaverikSuiteRegistry.Reload rolls back to the previous

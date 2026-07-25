@@ -1,0 +1,24 @@
+{
+  "id": "smoke-overview",
+  "title": "Smoke overview",
+  "sections": [
+    {
+      "title": "Timing",
+      "visualizations": [
+        {
+          "ref": "avg-duration-by-agent",
+          "title": null
+        }
+      ]
+    },
+    {
+      "title": "Raw results",
+      "visualizations": [
+        {
+          "ref": "results-table",
+          "title": null
+        }
+      ]
+    }
+  ]
+}
