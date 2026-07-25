@@ -144,6 +144,16 @@ app.Services.GetRequiredService<AgentRegistry>();
 // startup, so without this a broken suite file would only surface on first use.
 app.Services.GetRequiredService<MaverikSuiteRegistry>();
 
+// Rehydrate run history from results/ on disk — results/{runId}/run.json is the single source
+// of truth, MaverikRunStore is just a fast in-memory index rebuilt from it every startup. No
+// separate database, and no second place run data could drift out of sync with.
+{
+    var runStore = app.Services.GetRequiredService<MaverikRunStore>();
+    var resultsWriter = app.Services.GetRequiredService<MaverikResultsWriter>();
+    foreach (var run in resultsWriter.LoadAll())
+        runStore.Set(run);
+}
+
 // --- Static test front end (NOT ported to the platform) ---
 // Serves wwwroot/index.html as a reference client and local demo. The platform hosts its own
 // front end against the /api endpoints below; this exists only for testing.

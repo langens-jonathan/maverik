@@ -14,6 +14,46 @@ public sealed class MaverikResultsWriter(string contentRootPath, ILogger<Maverik
         WriteIndented = true
     };
 
+    // Rehydrates MaverikRunStore from results/*/run.json at startup — results/ is the single
+    // source of truth (no DB), the in-memory store is just a fast index rebuilt from it every
+    // time the process starts, so run history survives a container restart. Only completed runs
+    // are ever written to disk (see WriteAsync's call site in MaverikRunner), so every folder
+    // found here is inherently a finished run — nothing "queued"/"running" to reconcile. A
+    // folder with a missing or corrupt run.json is skipped with a warning rather than failing
+    // startup; losing one historical run is far better than the host not starting.
+    public IReadOnlyList<RunStatus> LoadAll()
+    {
+        var runs = new List<RunStatus>();
+        var resultsDir = Path.Combine(contentRootPath, "results");
+        if (!Directory.Exists(resultsDir))
+            return runs;
+
+        foreach (var dir in Directory.GetDirectories(resultsDir))
+        {
+            // suite-runs/ lives alongside the per-run folders but isn't one itself.
+            if (Path.GetFileName(dir) == "suite-runs")
+                continue;
+
+            var path = Path.Combine(dir, "run.json");
+            if (!File.Exists(path))
+                continue;
+
+            try
+            {
+                var run = JsonSerializer.Deserialize<RunStatus>(File.ReadAllText(path), JsonOptions);
+                if (run is not null)
+                    runs.Add(run);
+            }
+            catch (Exception ex)
+            {
+                log.LogWarning(ex, "Skipping unreadable run.json in '{Dir}'.", dir);
+            }
+        }
+
+        log.LogInformation("Rehydrated {Count} run(s) from {Dir}.", runs.Count, resultsDir);
+        return runs;
+    }
+
     public async Task WriteAsync(RunStatus run, RunSummary summary, CancellationToken ct)
     {
         try
