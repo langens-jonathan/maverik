@@ -37,4 +37,7 @@ export const api = {
       method: "PUT",
       body: JSON.stringify({ content }),
     }),
+  getToolCostsConfig: () => request("/api/config/tool-costs"),
+  saveToolCostsConfig: (data) =>
+    request("/api/config/tool-costs", { method: "PUT", body: JSON.stringify(data) }),
 };

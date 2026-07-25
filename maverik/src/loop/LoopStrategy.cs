@@ -24,7 +24,8 @@ public sealed record TurnResult(
     IReadOnlyList<string> ToolNames,
     long? InputTokens,                  // null = no response this turn reported usage (distinct from 0)
     long? OutputTokens,
-    bool HitIterationLimit);
+    bool HitIterationLimit,
+    long? PeakContextTokens);           // largest single round-trip's (input+output), not summed — see RunTurnAsync
 
 public interface ILoopStrategy
 {
@@ -63,7 +64,7 @@ public abstract class LoopStrategyBase : ILoopStrategy
         // McpClientTool : AIFunction, so the agent's subset goes straight into ChatOptions.
         var options = new ChatOptions { Tools = [.. request.Tools] };
 
-        long? inputTokens = null, outputTokens = null;
+        long? inputTokens = null, outputTokens = null, peakContextTokens = null;
         var toolNames = new List<string>();
 
         for (var iteration = 1; iteration <= request.MaxIterations; iteration++)
@@ -75,6 +76,17 @@ public abstract class LoopStrategyBase : ILoopStrategy
             // never 0.
             Accumulate(response.Usage?.InputTokenCount, ref inputTokens);
             Accumulate(response.Usage?.OutputTokenCount, ref outputTokens);
+
+            // Unlike the totals above, this is NOT accumulated — it's the size of the single
+            // largest round-trip (this call's own input+output), which is what actually matters
+            // for "how close did we get to the model's context limit". Because history only
+            // grows across iterations, this is normally the last round-trip, but it's tracked as
+            // a running max rather than assumed, in case a provider ever reports otherwise.
+            if (response.Usage is not null)
+            {
+                var thisCallTotal = (response.Usage.InputTokenCount ?? 0) + (response.Usage.OutputTokenCount ?? 0);
+                peakContextTokens = peakContextTokens is null ? thisCallTotal : Math.Max(peakContextTokens.Value, thisCallTotal);
+            }
 
             // Persist whatever the model produced this round (text and/or tool-call requests)
             // so the next call sees a coherent history. For the chat path this list IS the
@@ -88,7 +100,7 @@ public abstract class LoopStrategyBase : ILoopStrategy
 
             if (calls.Count == 0)
                 return new TurnResult(response.Text, iteration, toolNames.Count, toolNames,
-                                      inputTokens, outputTokens, HitIterationLimit: false);
+                                      inputTokens, outputTokens, HitIterationLimit: false, peakContextTokens);
 
             toolNames.AddRange(calls.Select(c => c.Name));
 
@@ -100,7 +112,7 @@ public abstract class LoopStrategyBase : ILoopStrategy
         }
 
         return new TurnResult("", request.MaxIterations, toolNames.Count, toolNames,
-                              inputTokens, outputTokens, HitIterationLimit: true);
+                              inputTokens, outputTokens, HitIterationLimit: true, peakContextTokens);
     }
 
     // Dispatch one call to the owning MCP client. Names resolve against the agent's allowed

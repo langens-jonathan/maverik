@@ -1,0 +1,5 @@
+{
+  "toolCosts": [
+    { "mcpServer": "github", "tool": "search_code", "costPerInvocation": 0.5 }
+  ]
+}

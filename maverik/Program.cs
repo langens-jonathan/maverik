@@ -1,4 +1,5 @@
 using System.Net;
+using System.Text.Json;
 using Anthropic;
 using McpHost.Agents;
 using McpHost.Chat;
@@ -90,6 +91,13 @@ builder.Services.AddSingleton<IReadOnlyList<McpServerConfig>>(mcpFile.Servers);
 // service (connect on startup, dispose on shutdown) — the same instance for both.
 builder.Services.AddSingleton<McpServerRegistry>();
 builder.Services.AddHostedService(sp => sp.GetRequiredService<McpServerRegistry>());
+
+// --- Tool costs ---
+// Cost per invocation of a given (mcpServer, tool) pair, used by MaverikSummaryBuilder. Pure
+// data lookup table, no live connections — hot-reloadable like agents/llm-models, but simpler
+// since Reload can't meaningfully fail.
+var (toolCostsFile, _) = configFiles.LoadToolCosts();
+builder.Services.AddSingleton<ToolCostRegistry>(sp => new ToolCostRegistry(toolCostsFile));
 
 // --- Agents ---
 // AgentRegistry needs configDir so it can find each agent's prompt file
@@ -257,6 +265,22 @@ app.MapPut("/api/config/mcp-servers", (McpServersFile data, ConfigFileService cf
     return Results.Ok(new { applied = false, message = (string?)null, restartRequired = true });
 });
 
+app.MapGet("/api/config/tool-costs", (ConfigFileService cfg) =>
+{
+    var (data, bootstrapped) = cfg.LoadToolCosts();
+    return Results.Ok(new { bootstrapped, data });
+});
+
+app.MapPut("/api/config/tool-costs", (ToolCostsFile data, ConfigFileService cfg, ToolCostRegistry toolCosts) =>
+{
+    if (data.ToolCosts.Any(t => string.IsNullOrWhiteSpace(t.McpServer) || string.IsNullOrWhiteSpace(t.Tool)))
+        return Results.BadRequest(new { error = "Every tool cost entry needs a non-empty mcpServer and tool." });
+
+    cfg.SaveToolCosts(data);
+    toolCosts.Reload(data);
+    return Results.Ok(new { applied = true, message = (string?)null, restartRequired = false });
+});
+
 // Per-agent system prompt file (config/prompts/agent/<id>.md). No example template exists for
 // these (they're real committed content, not secrets), so a missing file just means an empty
 // draft rather than a copied-from-example one.
@@ -322,6 +346,14 @@ app.MapPost("/api/maverik/runs", async (
     if (repetitions < 1)
         return Results.BadRequest(new { error = "repetitions must be >= 1." });
 
+    // Which of the 9 canonical metrics this run is "about" — purely informational (every metric
+    // is always computed regardless), so a future comparison UI knows what to default to.
+    // Unrecognized keys fail loudly here rather than being silently ignored.
+    var metrics = request.Metrics is { Count: > 0 } ? request.Metrics : MaverikMetrics.All;
+    var unknownMetrics = metrics.Where(m => !MaverikMetrics.All.Contains(m)).ToList();
+    if (unknownMetrics.Count > 0)
+        return Results.BadRequest(new { error = $"Unknown metric(s): {string.Join(", ", unknownMetrics)}. Valid: {string.Join(", ", MaverikMetrics.All)}." });
+
     // Readable-unique id; the suffix guards against two runs started within the same second.
     var runId = $"{suite.Id}-{DateTimeOffset.UtcNow:yyyyMMdd-HHmmss}";
     while (store.Get(runId) is not null)
@@ -334,9 +366,10 @@ app.MapPost("/api/maverik/runs", async (
         CompletedCases: 0,
         CreatedAt: DateTimeOffset.UtcNow,
         StartedAt: null, FinishedAt: null,
-        Results: []));
+        Results: [],
+        JudgedMetrics: metrics));
 
-    await queue.EnqueueAsync(new RunRequest(runId, suite.Id, agentIds, repetitions));
+    await queue.EnqueueAsync(new RunRequest(runId, suite.Id, agentIds, repetitions, metrics));
     return Results.Ok(new { runId });
 });
 
@@ -363,10 +396,30 @@ app.MapGet("/api/maverik/runs/{runId}", (string runId, MaverikRunStore store) =>
 // reflects partial progress); the same computation is persisted as summary.json once a run
 // completes (see MaverikRunner/MaverikResultsWriter).
 app.MapGet("/api/maverik/runs/{runId}/summary", (
-    string runId, MaverikRunStore store, MaverikSuiteRegistry suites, AgentRegistry agents, LLMModelRegistry models) =>
+    string runId, MaverikRunStore store, MaverikSuiteRegistry suites, AgentRegistry agents, LLMModelRegistry models,
+    McpServerRegistry mcp, ToolCostRegistry toolCosts) =>
     store.Get(runId) is { } run
-        ? Results.Ok(MaverikSummaryBuilder.Build(run, suites, agents, models))
+        ? Results.Ok(MaverikSummaryBuilder.Build(run, suites, agents, models, mcp, toolCosts))
         : Results.NotFound(new { error = $"No run '{runId}'." }));
+
+// List persisted per-(suite, agent, timestamp) benchmark records — the comparison-ready
+// artifacts (see SuiteRunRecord), independent of the batch run.json they came from. No
+// comparison UI reads this yet; it's the data layer a future one will use.
+app.MapGet("/api/maverik/suite-runs", (string? suiteId) =>
+{
+    var dir = Path.Combine(builder.Environment.ContentRootPath, "results", "suite-runs");
+    if (!Directory.Exists(dir))
+        return Results.Ok(Array.Empty<SuiteRunRecord>());
+
+    var readOptions = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
+    var records = Directory.GetFiles(dir, "*.json")
+        .Select(path => JsonSerializer.Deserialize<SuiteRunRecord>(File.ReadAllText(path), readOptions))
+        .Where(r => r is not null && (string.IsNullOrEmpty(suiteId) || r.SuiteId == suiteId))
+        .OrderByDescending(r => r!.Timestamp)
+        .ToList();
+
+    return Results.Ok(records);
+});
 
 app.Run();
 
@@ -395,8 +448,9 @@ static object ApplyAgentsReload(AgentsFile file, AgentRegistry agentRegistry)
 
 public record ChatRequest(string Message, string? Agent = null);
 
-// Body of POST /api/maverik/runs. AgentIds defaults to the suite's list, Repetitions to 1.
-public record StartRunRequest(string? SuiteId, List<string>? AgentIds = null, int? Repetitions = null);
+// Body of POST /api/maverik/runs. AgentIds defaults to the suite's list, Repetitions to 1,
+// Metrics to every key in MaverikMetrics.All.
+public record StartRunRequest(string? SuiteId, List<string>? AgentIds = null, int? Repetitions = null, List<string>? Metrics = null);
 
 // Body of PUT /api/config/prompts/{agentId}.
 public record PromptRequest(string? Content);

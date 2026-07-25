@@ -1,6 +1,7 @@
 using System.Text.Json;
 using McpHost.Agents;
 using McpHost.LlmModel;
+using McpHost.Maverik;
 using McpHost.Mcp;
 
 namespace McpHost.Config;
@@ -35,6 +36,9 @@ public sealed class ConfigFileService
 
     public (McpServersFile Data, bool Bootstrapped) LoadMcpServers() => Load<McpServersFile>("mcp-servers.json");
     public void SaveMcpServers(McpServersFile data) => Save("mcp-servers.json", data);
+
+    public (ToolCostsFile Data, bool Bootstrapped) LoadToolCosts() => Load<ToolCostsFile>("tool-costs.json");
+    public void SaveToolCosts(ToolCostsFile data) => Save("tool-costs.json", data);
 
     // No example template exists per-prompt (prompts are real committed content, not
     // secrets/user-specific values) — "bootstrapped" here just means the file doesn't exist yet,

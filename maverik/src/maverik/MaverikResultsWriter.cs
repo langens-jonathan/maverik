@@ -1,5 +1,6 @@
 using System.Text;
 using System.Text.Json;
+using McpHost.Agents;
 
 namespace McpHost.Maverik;
 
@@ -43,7 +44,7 @@ public sealed class MaverikResultsWriter(string contentRootPath, ILogger<Maverik
     private static string ToCsv(IReadOnlyList<QuestionRunResult> results)
     {
         var sb = new StringBuilder();
-        sb.AppendLine("agentId,questionId,repetition,durationMs,inputTokens,outputTokens,iterations,toolCalls,passed,error");
+        sb.AppendLine("agentId,questionId,repetition,durationMs,inputTokens,outputTokens,peakContextTokens,iterations,toolCalls,passed,error");
         foreach (var r in results)
         {
             sb.AppendLine(string.Join(',',
@@ -53,12 +54,47 @@ public sealed class MaverikResultsWriter(string contentRootPath, ILogger<Maverik
                 r.DurationMs,
                 r.InputTokens,          // null renders as empty — "unknown", not 0
                 r.OutputTokens,
+                r.PeakContextTokens,
                 r.Iterations,
                 r.ToolCallCount,
                 r.Passed,
                 Escape(r.Error)));
         }
         return sb.ToString();
+    }
+
+    // The comparison-ready artifact: one small JSON file per agent in the batch, named so it's
+    // individually addressable by (suite, agent, point in time) — see SuiteRunRecord. Written
+    // alongside the existing batch output, not instead of it; a write failure here follows the
+    // same "log and move on" policy as WriteAsync above.
+    public async Task WriteSuiteRunRecordsAsync(RunStatus run, RunSummary summary, AgentRegistry agents, CancellationToken ct)
+    {
+        try
+        {
+            var dir = Path.Combine(contentRootPath, "results", "suite-runs");
+            Directory.CreateDirectory(dir);
+
+            foreach (var agentSummary in summary.Agents)
+            {
+                var record = new SuiteRunRecord(
+                    run.SuiteId,
+                    agentSummary.AgentId,
+                    agents.Resolve(agentSummary.AgentId),
+                    run.CreatedAt,
+                    run.RunId,
+                    run.JudgedMetrics,
+                    agentSummary);
+
+                var fileName = $"{Sanitize(run.SuiteId)}--{Sanitize(agentSummary.AgentId)}--{run.CreatedAt:yyyyMMdd-HHmmss}.json";
+                await File.WriteAllTextAsync(Path.Combine(dir, fileName), JsonSerializer.Serialize(record, JsonOptions), ct);
+            }
+
+            log.LogInformation("Run '{RunId}' wrote {Count} suite-run record(s) to {Dir}.", run.RunId, summary.Agents.Count, dir);
+        }
+        catch (Exception ex)
+        {
+            log.LogError(ex, "Failed to write suite-run records for run '{RunId}'.", run.RunId);
+        }
     }
 
     // Minimal CSV quoting: wrap when the value contains a delimiter/quote/newline (error

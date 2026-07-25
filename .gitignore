@@ -8,6 +8,7 @@ config/.env
 config/agents.json
 config/llm-models.json
 config/mcp-servers.json
+config/tool-costs.json
 
 # Filled-in Docker Compose config (the .example template stays committed)
 docker-compose.yml

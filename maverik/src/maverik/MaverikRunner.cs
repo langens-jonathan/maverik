@@ -23,6 +23,7 @@ public sealed class MaverikRunner(
     LLMModelRegistry models,
     LoopStrategyRegistry loops,
     McpServerRegistry mcp,
+    ToolCostRegistry toolCosts,
     CriterionEvaluator evaluator,
     MaverikResultsWriter writer,
     ILogger<MaverikRunner> log) : BackgroundService
@@ -91,8 +92,9 @@ public sealed class MaverikRunner(
         status = status with { State = "completed", FinishedAt = DateTimeOffset.UtcNow };
         store.Set(status);
 
-        var summary = MaverikSummaryBuilder.Build(status, suites, agents, models);
+        var summary = MaverikSummaryBuilder.Build(status, suites, agents, models, mcp, toolCosts);
         await writer.WriteAsync(status, summary, ct);
+        await writer.WriteSuiteRunRecordsAsync(status, summary, agents, ct);
 
         log.LogInformation("Run '{RunId}' completed: {Passed}/{Evaluated} passed, {Errors} error(s).",
             request.RunId,
@@ -134,6 +136,7 @@ public sealed class MaverikRunner(
                 DurationMs = sw.ElapsedMilliseconds,
                 InputTokens = turn.InputTokens,
                 OutputTokens = turn.OutputTokens,
+                PeakContextTokens = turn.PeakContextTokens,
                 Iterations = turn.Iterations,
                 ToolCallCount = turn.ToolCallCount,
                 ToolNames = turn.ToolNames,

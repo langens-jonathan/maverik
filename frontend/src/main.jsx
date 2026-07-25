@@ -10,6 +10,7 @@ import { ConfigPage } from "./pages/ConfigPage.jsx";
 import { AgentsConfigPage } from "./pages/AgentsConfigPage.jsx";
 import { LlmModelsConfigPage } from "./pages/LlmModelsConfigPage.jsx";
 import { McpServersConfigPage } from "./pages/McpServersConfigPage.jsx";
+import { ToolCostsConfigPage } from "./pages/ToolCostsConfigPage.jsx";
 import { PromptsConfigPage } from "./pages/PromptsConfigPage.jsx";
 import "./styles.css";
 
@@ -28,6 +29,7 @@ ReactDOM.createRoot(document.getElementById("root")).render(
             <Route path="agents" element={<AgentsConfigPage />} />
             <Route path="llm-models" element={<LlmModelsConfigPage />} />
             <Route path="mcp-servers" element={<McpServersConfigPage />} />
+            <Route path="tool-costs" element={<ToolCostsConfigPage />} />
             <Route path="prompts" element={<PromptsConfigPage />} />
           </Route>
         </Route>

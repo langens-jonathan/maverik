@@ -1,5 +1,6 @@
 using McpHost.Agents;
 using McpHost.LlmModel;
+using McpHost.Mcp;
 
 namespace McpHost.Maverik;
 
@@ -14,8 +15,13 @@ public sealed record AgentSummary(
     double? AvgOutputTokens,
     double AvgIterations,
     double AvgToolCalls,
+    double? AvgPeakContextTokens,
+    long? MaxPeakContextTokens,
     decimal? EstCostPerQuestion,
     decimal? EstCostTotal,
+    decimal? EstToolCostPerQuestion,
+    decimal? EstToolCostTotal,
+    decimal? EstOverallCostTotal,
     int Errors,
     int CasesWithoutUsage);
 
@@ -37,19 +43,23 @@ public sealed record RunSummary(
 public static class MaverikSummaryBuilder
 {
     public static RunSummary Build(
-        RunStatus run, MaverikSuiteRegistry suites, AgentRegistry agents, LLMModelRegistry models)
+        RunStatus run, MaverikSuiteRegistry suites, AgentRegistry agents, LLMModelRegistry models,
+        McpServerRegistry mcp, ToolCostRegistry toolCosts)
     {
         var agentSummaries = run.AgentIds
             .Select(agentId => BuildAgentSummary(
-                agentId, run.Results.Where(r => r.AgentId == agentId).ToList(), agents, models))
+                agentId, run.Results.Where(r => r.AgentId == agentId).ToList(), agents, models, mcp, toolCosts))
             .ToList();
 
         return new RunSummary(run.RunId, agentSummaries, BuildJudgeOverhead(run, suites, models));
     }
 
     private static AgentSummary BuildAgentSummary(
-        string agentId, IReadOnlyList<QuestionRunResult> cases, AgentRegistry agents, LLMModelRegistry models)
+        string agentId, IReadOnlyList<QuestionRunResult> cases, AgentRegistry agents, LLMModelRegistry models,
+        McpServerRegistry mcp, ToolCostRegistry toolCosts)
     {
+        var agent = agents.Resolve(agentId);
+
         var errors = cases.Count(c => c.Error != null);
         // An errored case never reached evaluation — excluded from every average below so one
         // blown-up case doesn't skew the numbers for the rest.
@@ -67,22 +77,54 @@ public static class MaverikSummaryBuilder
         double? avgInputTokens = withUsage.Count == 0 ? null : withUsage.Average(c => c.InputTokens!.Value);
         double? avgOutputTokens = withUsage.Count == 0 ? null : withUsage.Average(c => c.OutputTokens!.Value);
 
+        var withPeakContext = evaluated.Where(c => c.PeakContextTokens is not null).ToList();
+        double? avgPeakContextTokens = withPeakContext.Count == 0 ? null : withPeakContext.Average(c => c.PeakContextTokens!.Value);
+        long? maxPeakContextTokens = withPeakContext.Count == 0 ? null : withPeakContext.Max(c => c.PeakContextTokens!.Value);
+
         decimal? estCostPerQuestion = null;
         decimal? estCostTotal = null;
-        var pricing = models.ResolveConfig(agents.Resolve(agentId).Model);
+        var pricing = models.ResolveConfig(agent.Model);
         if (pricing is { InputPricePerMTok: not null, OutputPricePerMTok: not null } && withUsage.Count > 0)
         {
             var costs = withUsage
-                .Select(c => CaseCost(c.InputTokens!.Value, c.OutputTokens!.Value,
+                .Select(c => TokenCost(c.InputTokens!.Value, c.OutputTokens!.Value,
                     pricing.InputPricePerMTok!.Value, pricing.OutputPricePerMTok!.Value))
                 .ToList();
             estCostPerQuestion = costs.Average();
             estCostTotal = costs.Sum();
         }
 
+        // Resolve each case's tool calls to their owning server SCOPED to this agent's allowed
+        // servers (agent.McpServers) — the same scoping McpServerRegistry.ToolsForServers uses —
+        // so a same-named tool on a server this agent doesn't use can't be mis-attributed.
+        var toolServerByName = agent.McpServers
+            .SelectMany(server => mcp.ToolsByServer.TryGetValue(server, out var tools)
+                ? tools.Select(t => (Server: server, t.Name))
+                : [])
+            .GroupBy(t => t.Name)
+            .ToDictionary(g => g.Key, g => g.First().Server);
+
+        decimal? estToolCostPerQuestion = null;
+        decimal? estToolCostTotal = null;
+        if (evaluated.Count > 0)
+        {
+            var toolCostsPerCase = evaluated
+                .Select(c => c.ToolNames.Sum(name =>
+                    toolServerByName.TryGetValue(name, out var server) ? toolCosts.CostOf(server, name) : 0m))
+                .ToList();
+            estToolCostPerQuestion = toolCostsPerCase.Average();
+            estToolCostTotal = toolCostsPerCase.Sum();
+        }
+
+        decimal? estOverallCostTotal = estCostTotal is null && estToolCostTotal is null
+            ? null
+            : (estCostTotal ?? 0m) + (estToolCostTotal ?? 0m);
+
         return new AgentSummary(
             agentId, passRate, avgDurationMs, avgInputTokens, avgOutputTokens, avgIterations, avgToolCalls,
-            estCostPerQuestion, estCostTotal, errors, casesWithoutUsage);
+            avgPeakContextTokens, maxPeakContextTokens,
+            estCostPerQuestion, estCostTotal, estToolCostPerQuestion, estToolCostTotal, estOverallCostTotal,
+            errors, casesWithoutUsage);
     }
 
     // Per-criterion judgeModel overrides aren't recorded per-case, only tokens — so the suite's
@@ -97,12 +139,12 @@ public static class MaverikSummaryBuilder
         var pricing = models.ResolveConfig(suites.Resolve(run.SuiteId).JudgeModel);
         if (pricing is { InputPricePerMTok: not null, OutputPricePerMTok: not null } && (inputTokens > 0 || outputTokens > 0))
         {
-            estCost = CaseCost(inputTokens, outputTokens, pricing.InputPricePerMTok!.Value, pricing.OutputPricePerMTok!.Value);
+            estCost = TokenCost(inputTokens, outputTokens, pricing.InputPricePerMTok!.Value, pricing.OutputPricePerMTok!.Value);
         }
 
         return new JudgeOverheadSummary(inputTokens, outputTokens, estCost);
     }
 
-    private static decimal CaseCost(long inputTokens, long outputTokens, decimal inputPricePerMTok, decimal outputPricePerMTok) =>
+    private static decimal TokenCost(long inputTokens, long outputTokens, decimal inputPricePerMTok, decimal outputPricePerMTok) =>
         inputTokens / 1_000_000m * inputPricePerMTok + outputTokens / 1_000_000m * outputPricePerMTok;
 }
