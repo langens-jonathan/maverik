@@ -40,4 +40,10 @@ export const api = {
   getToolCostsConfig: () => request("/api/config/tool-costs"),
   saveToolCostsConfig: (data) =>
     request("/api/config/tool-costs", { method: "PUT", body: JSON.stringify(data) }),
+
+  createSuite: (data) => request("/api/maverik/suites", { method: "POST", body: JSON.stringify(data) }),
+  updateSuite: (suiteId, data) =>
+    request(`/api/maverik/suites/${encodeURIComponent(suiteId)}`, { method: "PUT", body: JSON.stringify(data) }),
+  deleteSuite: (suiteId) =>
+    request(`/api/maverik/suites/${encodeURIComponent(suiteId)}`, { method: "DELETE" }),
 };

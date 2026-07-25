@@ -5,6 +5,7 @@ const TABS = [
   { to: "/config/llm-models", label: "LLM Models" },
   { to: "/config/mcp-servers", label: "MCP Servers" },
   { to: "/config/tool-costs", label: "Tool Costs" },
+  { to: "/config/suites", label: "Suites" },
   { to: "/config/prompts", label: "Prompts" },
 ];
 

@@ -12,11 +12,21 @@ namespace McpHost.Maverik;
 //
 // A missing or empty maverik-suites/ folder is fine (zero suites, logged) — the host is still
 // useful as a plain chat host without MAVERIK.
+//
+// Supports Reload() (same rollback-on-throw pattern as AgentRegistry — see
+// src/agents/AgentRegistry.cs): the whole suite set is rebuilt from disk and swapped in by a
+// single reference assignment, atomic in .NET, so a concurrent Resolve()/Suites read sees either
+// the fully-old or fully-new set, never a mix. If rebuilding throws (a bad suite file), the field
+// is left untouched — a bad edit can't take the host down, it just fails to apply until fixed.
 public sealed class MaverikSuiteRegistry
 {
     private static readonly string[] CriterionTypes = ["exact", "contains", "regex", "llm-judge"];
 
-    private readonly Dictionary<string, MaverikSuite> _suites = new();
+    private readonly string _configDir;
+    private readonly AgentRegistry _agents;
+    private readonly LLMModelRegistry _models;
+    private readonly ILogger<MaverikSuiteRegistry> _log;
+    private IReadOnlyDictionary<string, MaverikSuite> _suites;
 
     public MaverikSuiteRegistry(
         string configDir,
@@ -24,11 +34,36 @@ public sealed class MaverikSuiteRegistry
         LLMModelRegistry models,
         ILogger<MaverikSuiteRegistry> log)
     {
-        var dir = Path.Combine(configDir, "maverik-suites");
+        _configDir = configDir;
+        _agents = agents;
+        _models = models;
+        _log = log;
+        _suites = Build();
+    }
+
+    public IReadOnlyCollection<MaverikSuite> Suites => (IReadOnlyCollection<MaverikSuite>)_suites.Values;
+
+    // Unknown id throws — same fail-loudly convention as the other registries.
+    public MaverikSuite Resolve(string id)
+    {
+        if (_suites.TryGetValue(id, out var suite))
+            return suite;
+
+        throw new InvalidOperationException(
+            $"No suite with id '{id}' — available: {(_suites.Count == 0 ? "(none)" : string.Join(", ", _suites.Keys))}.");
+    }
+
+    public void Reload() => _suites = Build();
+
+    private IReadOnlyDictionary<string, MaverikSuite> Build()
+    {
+        var suites = new Dictionary<string, MaverikSuite>();
+
+        var dir = Path.Combine(_configDir, "maverik-suites");
         if (!Directory.Exists(dir))
         {
-            log.LogInformation("No maverik-suites directory at '{Dir}'; 0 suites loaded.", dir);
-            return;
+            _log.LogInformation("No maverik-suites directory at '{Dir}'; 0 suites loaded.", dir);
+            return suites;
         }
 
         var jsonOptions = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
@@ -50,29 +85,18 @@ public sealed class MaverikSuiteRegistry
             if (suite is null)
                 throw new InvalidOperationException($"Suite file '{file}' deserialized to null.");
 
-            Validate(suite, file, agents, models);
+            Validate(suite, file, _agents, _models);
 
-            if (!_suites.TryAdd(suite.Id, suite))
+            if (!suites.TryAdd(suite.Id, suite))
                 throw new InvalidOperationException(
                     $"Suite file '{file}' has id '{suite.Id}', which another suite file already uses.");
 
-            log.LogInformation("Loaded suite '{Id}' ({Questions} question(s), {Agents} agent(s)) from {File}.",
+            _log.LogInformation("Loaded suite '{Id}' ({Questions} question(s), {Agents} agent(s)) from {File}.",
                 suite.Id, suite.Questions.Count, suite.Agents.Count, file);
         }
 
-        log.LogInformation("MAVERIK suites ready: {Count} suite(s).", _suites.Count);
-    }
-
-    public IReadOnlyCollection<MaverikSuite> Suites => _suites.Values;
-
-    // Unknown id throws — same fail-loudly convention as the other registries.
-    public MaverikSuite Resolve(string id)
-    {
-        if (_suites.TryGetValue(id, out var suite))
-            return suite;
-
-        throw new InvalidOperationException(
-            $"No suite with id '{id}' — available: {(_suites.Count == 0 ? "(none)" : string.Join(", ", _suites.Keys))}.");
+        _log.LogInformation("MAVERIK suites ready: {Count} suite(s).", suites.Count);
+        return suites;
     }
 
     // All the ways a suite file can be wrong, each with a message that names the file and the

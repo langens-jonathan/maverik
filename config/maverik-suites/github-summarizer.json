@@ -1,0 +1,23 @@
+{
+  "id": "github-summarizer",
+  "name": "github summarizer",
+  "description": "minimal github agent check",
+  "agents": [
+    "github-test-agent"
+  ],
+  "judgeModel": null,
+  "questions": [
+    {
+      "id": "repo-count",
+      "text": "How many repository do I have?",
+      "criterion": {
+        "type": "contains",
+        "expected": "98",
+        "caseSensitive": false,
+        "pattern": null,
+        "rubric": null,
+        "judgeModel": null
+      }
+    }
+  ]
+}

@@ -40,6 +40,22 @@ public sealed class ConfigFileService
     public (ToolCostsFile Data, bool Bootstrapped) LoadToolCosts() => Load<ToolCostsFile>("tool-costs.json");
     public void SaveToolCosts(ToolCostsFile data) => Save("tool-costs.json", data);
 
+    // One file per suite under maverik-suites/, unlike the single-file configs above — no
+    // bootstrap-from-example (suites are real authored content, not secrets/user-specific
+    // values; see MaverikSuiteRegistry for the loader that reads all of them at once).
+    public bool SuiteExists(string suiteId) => File.Exists(SuitePath(suiteId));
+
+    public void SaveSuite(string suiteId, MaverikSuite data)
+    {
+        var path = SuitePath(suiteId);
+        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+        File.WriteAllText(path, JsonSerializer.Serialize(data, WriteOptions));
+    }
+
+    public void DeleteSuite(string suiteId) => File.Delete(SuitePath(suiteId));
+
+    private string SuitePath(string suiteId) => Path.Combine(_configDir, "maverik-suites", suiteId + ".json");
+
     // No example template exists per-prompt (prompts are real committed content, not
     // secrets/user-specific values) — "bootstrapped" here just means the file doesn't exist yet,
     // so the UI can start the editor from an empty draft instead of a copied template.

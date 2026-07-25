@@ -1,5 +1,6 @@
 using System.Net;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using Anthropic;
 using McpHost.Agents;
 using McpHost.Chat;
@@ -321,6 +322,51 @@ app.MapGet("/api/maverik/suites/{suiteId}", (string suiteId, MaverikSuiteRegistr
     catch (InvalidOperationException ex) { return Results.NotFound(new { error = ex.Message }); }
 });
 
+// --- Suite editing (dashboard) ---
+// Suites live one file per id under config/maverik-suites/ — unlike agents/llm-models/mcp-servers
+// (one shared file each), so create/update/delete are keyed by id rather than replacing a whole
+// file. Ids become literal filenames, so they're restricted to safe characters. All structural
+// validation (question ids, criterion shape, agent/judge-model references) is NOT duplicated
+// here — it's whatever MaverikSuiteRegistry's Reload() already enforces when rebuilding from
+// disk, reported back the same "saved to disk, applied live or not" way as agents.json edits.
+var suiteIdPattern = new Regex("^[a-zA-Z0-9_-]+$");
+
+app.MapPost("/api/maverik/suites", (MaverikSuite data, ConfigFileService cfg, MaverikSuiteRegistry suites) =>
+{
+    if (string.IsNullOrWhiteSpace(data.Id) || !suiteIdPattern.IsMatch(data.Id))
+        return Results.BadRequest(new { error = "Suite id must be non-empty and contain only letters, digits, '-', '_'." });
+    if (cfg.SuiteExists(data.Id))
+        return Results.Conflict(new { error = $"A suite with id '{data.Id}' already exists." });
+
+    cfg.SaveSuite(data.Id, data);
+    return Results.Ok(ApplySuitesReload(suites));
+});
+
+app.MapPut("/api/maverik/suites/{suiteId}", (string suiteId, MaverikSuite data, ConfigFileService cfg, MaverikSuiteRegistry suites) =>
+{
+    if (!suiteIdPattern.IsMatch(suiteId))
+        return Results.BadRequest(new { error = "Invalid suite id." });
+    if (data.Id != suiteId)
+        return Results.BadRequest(new { error = $"Body id '{data.Id}' does not match URL id '{suiteId}' — renaming isn't supported here, delete and re-create instead." });
+    if (!cfg.SuiteExists(suiteId))
+        return Results.NotFound(new { error = $"No suite '{suiteId}'." });
+
+    cfg.SaveSuite(suiteId, data);
+    return Results.Ok(ApplySuitesReload(suites));
+});
+
+app.MapDelete("/api/maverik/suites/{suiteId}", (string suiteId, ConfigFileService cfg, MaverikSuiteRegistry suites) =>
+{
+    if (!suiteIdPattern.IsMatch(suiteId))
+        return Results.BadRequest(new { error = "Invalid suite id." });
+    if (!cfg.SuiteExists(suiteId))
+        return Results.NotFound(new { error = $"No suite '{suiteId}'." });
+
+    cfg.DeleteSuite(suiteId);
+    suites.Reload(); // removing a suite can't invalidate the registry; nothing to roll back
+    return Results.NoContent();
+});
+
 // Start a benchmark run. All ids are validated HERE so mistakes fail at request time with a
 // 400, not mid-run; the runner can then assume a well-formed request. Returns { runId }
 // immediately — results arrive by polling the endpoints below.
@@ -441,6 +487,28 @@ static object ApplyAgentsReload(AgentsFile file, AgentRegistry agentRegistry)
         {
             applied = false,
             message = $"Saved to disk, but couldn't apply live: {ex.Message} The previous configuration is still active — fix the issue and save again.",
+            restartRequired = false
+        };
+    }
+}
+
+// Shared by POST/PUT /api/maverik/suites. MaverikSuiteRegistry.Reload rolls back to the previous
+// snapshot on failure (a bad suite file: missing criterion, unresolvable agent/judge model,
+// etc.), so a bad edit never takes the host down — the file is still saved, but the previous
+// suite set keeps serving until a fixed version is saved.
+static object ApplySuitesReload(MaverikSuiteRegistry suites)
+{
+    try
+    {
+        suites.Reload();
+        return new { applied = true, message = (string?)null, restartRequired = false };
+    }
+    catch (Exception ex)
+    {
+        return new
+        {
+            applied = false,
+            message = $"Saved to disk, but couldn't apply live: {ex.Message} The previous suite set is still active — fix the issue and save again.",
             restartRequired = false
         };
     }
