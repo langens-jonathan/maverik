@@ -1,5 +1,7 @@
+import { useEffect, useState } from "react";
 import { NavLink, Outlet, useLocation } from "react-router-dom";
 import { THEMES, useTheme } from "./hooks/useTheme.js";
+import { api } from "./api.js";
 
 // Mirrors the current route as "section / id" — MAVERIK's routes are never more than two
 // segments deep (/suites/:id, /runs/:id), so this doesn't need to handle more than that.
@@ -17,6 +19,47 @@ function Crumb() {
         </>
       )}
     </div>
+  );
+}
+
+// On/off switch for wire-level LLM logging (see README's "Dev mode" section). Off by default;
+// flipping it takes effect immediately, no restart — but only for calls made from that point
+// on, so a MAVERIK run already in progress ends up with an incomplete log.
+function DevModeToggle() {
+  const [enabled, setEnabled] = useState(null); // null = not loaded yet
+  const [pending, setPending] = useState(false);
+
+  useEffect(() => {
+    api
+      .getDevMode()
+      .then((res) => setEnabled(res.enabled))
+      .catch(() => setEnabled(false));
+  }, []);
+
+  async function toggle() {
+    if (enabled === null || pending) return;
+    setPending(true);
+    try {
+      const res = await api.setDevMode(!enabled);
+      setEnabled(res.enabled);
+    } catch {
+      // leave the displayed state as-is; the user can retry
+    } finally {
+      setPending(false);
+    }
+  }
+
+  if (enabled === null) return null;
+
+  return (
+    <button
+      className={`dev-mode-toggle secondary${enabled ? " active" : ""}`}
+      onClick={toggle}
+      disabled={pending}
+      title="When on, every LLM request/response (chat and MAVERIK runs) is written to logs/ on disk."
+    >
+      Dev mode: {enabled ? "On" : "Off"}
+    </button>
   );
 }
 
@@ -40,6 +83,7 @@ export default function App() {
         </nav>
         <div className="header-right">
           <Crumb />
+          <DevModeToggle />
           <select
             className="theme-select"
             aria-label="Theme"

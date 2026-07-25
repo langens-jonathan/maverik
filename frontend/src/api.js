@@ -43,6 +43,9 @@ export const api = {
   saveToolCostsConfig: (data) =>
     request("/api/config/tool-costs", { method: "PUT", body: JSON.stringify(data) }),
 
+  getDevMode: () => request("/api/dev-mode"),
+  setDevMode: (enabled) => request("/api/dev-mode", { method: "POST", body: JSON.stringify({ enabled }) }),
+
   createSuite: (data) => request("/api/maverik/suites", { method: "POST", body: JSON.stringify(data) }),
   updateSuite: (suiteId, data) =>
     request(`/api/maverik/suites/${encodeURIComponent(suiteId)}`, { method: "PUT", body: JSON.stringify(data) }),

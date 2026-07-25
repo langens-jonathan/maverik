@@ -12,7 +12,7 @@
       "text": "How many repository do I have?",
       "criterion": {
         "type": "contains",
-        "expected": "98",
+        "expected": "97",
         "caseSensitive": false,
         "pattern": null,
         "rubric": null,

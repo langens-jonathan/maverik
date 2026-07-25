@@ -4,6 +4,7 @@ using Microsoft.Extensions.AI;
 using OpenAI;
 using System.ClientModel;
 using System.ClientModel.Primitives;
+using System.Net;
 using McpHost.Config;
 
 namespace McpHost.LlmModel;
@@ -32,10 +33,11 @@ public sealed class LLMModelRegistry : IDisposable
 
     private readonly ILogger<LLMModelRegistry> _log;
 
-    // When non-null (MCPHOST_LLM_DEBUG on), this HttpClient carries the wire-logging handler
-    // and is injected into every provider client. Null in normal operation. Reused across
-    // reloads — it isn't per-model state.
-    private readonly HttpClient? _http;
+    // When non-null (dev mode on — see DevModeState), this HttpClient carries the wire-logging
+    // handler and is injected into every provider client. Null in normal operation. Mutable
+    // (not per-model state, but not fixed for the registry's lifetime either): SetDevMode swaps
+    // it at runtime, unlike a plain config Reload which reuses whatever's already here.
+    private HttpClient? _http;
 
     private Snapshot _snapshot;
 
@@ -95,6 +97,34 @@ public sealed class LLMModelRegistry : IDisposable
         var newSnapshot = Build(configs, defaultModel, failures);
         var old = Interlocked.Exchange(ref _snapshot, newSnapshot);
         old.Dispose();
+        return failures;
+    }
+
+    // Turns wire-level LLM logging on/off at runtime (see LlmLoggingHandler, DevModeState) by
+    // constructing or tearing down the shared logging HttpClient and rebuilding every model's
+    // IChatClient through the same Reload machinery a config-editor save uses — same
+    // disposal-after-swap semantics apply (an in-flight chat turn/MAVERIK run keeps using
+    // whatever client it already had; only Resolve() calls made after this point are affected).
+    public IReadOnlyList<(string Id, string Error)> SetDevMode(bool enabled, ILoggerFactory loggerFactory, string logDirectory)
+    {
+        var oldHttp = _http;
+
+        if (enabled)
+        {
+            Directory.CreateDirectory(logDirectory);
+            var wireLog = loggerFactory.CreateLogger("LlmWire");
+            _http = new HttpClient(new LlmLoggingHandler(wireLog, logDirectory)
+            {
+                InnerHandler = new HttpClientHandler { AutomaticDecompression = DecompressionMethods.All }
+            });
+        }
+        else
+        {
+            _http = null;
+        }
+
+        var failures = Reload(_snapshot.Configs, _snapshot.DefaultModel);
+        oldHttp?.Dispose();
         return failures;
     }
 

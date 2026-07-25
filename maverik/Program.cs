@@ -49,14 +49,19 @@ builder.Services.AddSession(options =>
 // the ChatWorker drives the tool loop itself. Adding that middleware back collapses the loop
 // to a single call.
 var (llmModelsFile, _) = configFiles.LoadLlmModels();
-// Wire-level LLM debug logging. When MCPHOST_LLM_DEBUG is truthy, a DelegatingHandler is
-// injected into the provider clients that logs every raw HTTP request/response (per session)
-// to logs/{sessionId}.log and the ILogger. Off by default — zero overhead, clients built as
-// before.
+// Wire-level LLM debug logging ("dev mode"): when on, a DelegatingHandler is injected into the
+// provider clients that logs every raw HTTP request/response (covering both interactive chat
+// sessions and MAVERIK runs — both tag LlmLogContext.SessionId per turn) to logs/{sessionId}.log
+// and the ILogger. Off by default. MCPHOST_LLM_DEBUG only sets the STARTING value — from then on
+// it's a runtime toggle (DevModeState, POST /api/dev-mode -> LLMModelRegistry.SetDevMode), so it
+// can be turned on/off without a restart. See README's "Dev mode" section for the caveat this
+// implies for a MAVERIK run already in progress when it gets turned on mid-run.
 var llmDebugEnv = Environment.GetEnvironmentVariable("MCPHOST_LLM_DEBUG");
 var llmDebug = llmDebugEnv == "1" || string.Equals(llmDebugEnv, "true", StringComparison.OrdinalIgnoreCase);
 var llmLogDir = Path.Combine(builder.Environment.ContentRootPath, "logs");
 if (llmDebug) Directory.CreateDirectory(llmLogDir);
+
+builder.Services.AddSingleton(new DevModeState(llmDebug));
 
 builder.Services.AddSingleton<LLMModelRegistry>(sp =>
 {
@@ -205,6 +210,25 @@ app.MapGet("/api/agents", (AgentRegistry agents) =>
         defaultAgent = agents.DefaultAgent,
         agents = agents.Agents.Select(a => new { a.Id, a.Name, a.Description, a.Model, a.LoopType, a.McpServers })
     }));
+
+// --- Dev mode (wire-level LLM logging) ---
+// Runtime on/off switch for logging every raw LLM request/response to logs/{sessionId}.log,
+// covering both interactive chat and MAVERIK runs. Starts from MCPHOST_LLM_DEBUG but can be
+// flipped from here without a restart — see DevModeState/LLMModelRegistry.SetDevMode. A MAVERIK
+// run already in progress when this gets turned on only has its remaining calls logged (see
+// README's Dev mode section).
+app.MapGet("/api/dev-mode", (DevModeState devMode) => Results.Ok(new { enabled = devMode.Enabled }));
+
+app.MapPost("/api/dev-mode", (DevModeRequest request, DevModeState devMode, LLMModelRegistry models, ILoggerFactory loggerFactory) =>
+{
+    devMode.Set(request.Enabled);
+    var failures = models.SetDevMode(request.Enabled, loggerFactory, llmLogDir);
+    var message = failures.Count == 0
+        ? null
+        : $"Applied, but {failures.Count} model(s) failed to reinitialize: " +
+          string.Join("; ", failures.Select(f => $"{f.Id} ({f.Error})"));
+    return Results.Ok(new { enabled = devMode.Enabled, message });
+});
 
 // --- Config editing (dashboard) ---
 // View/edit the three editable JSON configs plus per-agent prompt files. Every registry above is
@@ -532,3 +556,6 @@ public record StartRunRequest(string? SuiteId, List<string>? AgentIds = null, in
 
 // Body of PUT /api/config/prompts/{agentId}.
 public record PromptRequest(string? Content);
+
+// Body of POST /api/dev-mode.
+public record DevModeRequest(bool Enabled);

@@ -112,8 +112,9 @@ attributable to the one thing you changed.
   question, per agent, per run.
 - **Interactive chat mode included** — poke at any agent configuration by hand through a
   simple polling chat API before you benchmark it.
-- **Wire-level debug logging** — set `MCPHOST_LLM_DEBUG=1` and every raw LLM HTTP exchange
-  (including judge traffic) is logged with timings and token counts.
+- **Wire-level debug logging ("dev mode")** — toggle at runtime (dashboard header, or
+  `POST /api/dev-mode`) and every raw LLM HTTP exchange (including judge traffic) is logged with
+  timings and token counts — off by default, see [Debugging / Dev mode](#-debugging--dev-mode).
 - **Docker-first deployment** — one `docker compose up` with secrets mounted, never baked in.
 
 ## 🔭 How it works
@@ -442,6 +443,7 @@ A minimal reference client lives under `wwwroot/` — open `http://localhost:508
 | --- | --- | --- |
 | GET | `/api/agents` | List agent configurations (id, name, description, model, loop type, servers). |
 | GET | `/api/tools` | The aggregated MCP tool catalog, grouped by server. |
+| GET/POST | `/api/dev-mode` | View/toggle wire-level LLM logging at runtime — see [Debugging / Dev mode](#-debugging--dev-mode). |
 | GET/PUT | `/api/config/agents` | View/edit `agents.json` (bootstraps from example if missing). PUT body/response is `AgentsFile`. |
 | GET/PUT | `/api/config/llm-models` | View/edit `llm-models.json`. |
 | GET/PUT | `/api/config/mcp-servers` | View/edit `mcp-servers.json`. |
@@ -456,12 +458,32 @@ A minimal reference client lives under `wwwroot/` — open `http://localhost:508
 | POST | `/api/chat` | Enqueue a chat message for an agent. |
 | GET | `/api/messages` | Drain buffered chat messages for the session. |
 
-## 🐛 Debugging
+## 🐛 Debugging / Dev mode
 
-Uncomment the `MCPHOST_LLM_DEBUG=1` line in `config/.env` and every raw LLM HTTP exchange — agent
-*and* judge traffic — is written to `logs/{sessionId|runId}.log` on the host (via the
-`./logs:/app/logs` mount) with method, endpoint, full bodies, round-trip time, and token usage.
-Off by default with zero overhead.
+**Dev mode** logs every raw LLM HTTP exchange — agent *and* judge traffic, covering both
+interactive chat and MAVERIK runs — to `logs/{sessionId|runId}.log` on the host (via the
+`./logs:/app/logs` mount), with method, endpoint, full request/response bodies, round-trip time,
+and token usage. In effect, this is the full conversation history for every session/run, in raw
+form, persisted to disk.
+
+Off by default, zero overhead when off. It's a **runtime toggle**, not just a startup setting:
+flip it via the dashboard header's "Dev mode" button, or directly:
+
+```bash
+curl -X POST http://localhost:5088/api/dev-mode -H "Content-Type: application/json" -d '{"enabled": true}'
+```
+
+`config/.env`'s `MCPHOST_LLM_DEBUG=1` still works — it just sets the *starting* value at
+container boot; the toggle can change it from there without a restart.
+
+**⚠️ Turning dev mode on mid-run only logs what happens from that point on.** If a MAVERIK run
+is already in progress when you flip the switch, cases that already completed before the toggle
+were never logged — `logs/{runId}.log` for that run will be missing their exchanges, i.e. an
+**incomplete conversation record** for that run. Toggle it on *before* starting a run if you need
+the full picture.
+
+There's no UI yet to browse what's been logged — for now, read the files directly under `logs/`.
+A viewer is planned.
 
 ## 🎛️ The JMeter analogy, fleshed out
 
