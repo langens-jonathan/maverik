@@ -72,25 +72,25 @@ that's enough or it needs another tool, and eventually answer. That loop — *ca
 answer, repeat until done* — is what makes something an agent rather than a one-shot
 completion.
 
-MAVERIK's MCP host implements exactly that loop (see `src/chat/ChatWorker.cs` /
-`src/loop/LoopStrategy.cs`), and the tools it hands the model come from one or more
+MAVERIK's MCP host implements exactly that loop (see `maverik/src/chat/ChatWorker.cs` /
+`maverik/src/loop/LoopStrategy.cs`), and the tools it hands the model come from one or more
 **MCP servers** — servers exposing typed, discoverable functions over the
 [Model Context Protocol](https://modelcontextprotocol.io).
 
 MAVERIK's specific definition of "agent" is an **Agent Configuration** — the `AgentConfig`
-object (`src/agents/AgentConfig.cs`) defined in `agents.json`. It's a named bundle of
-everything that determines how the loop behaves for a given use case:
+object (`maverik/src/agents/AgentConfig.cs`) defined in `config/agents.json`. It's a named
+bundle of everything that determines how the loop behaves for a given use case:
 
 | Field | Meaning |
 | --- | --- |
-| `systemPrompt` | how the agent is primed/instructed (inline or `prompts/agent/<id>.md`) |
-| `model` | which LLM answers, from `llm-models.json` |
+| `systemPrompt` | how the agent is primed/instructed (inline or `config/prompts/agent/<id>.md`) |
+| `model` | which LLM answers, from `config/llm-models.json` |
 | `mcpServers` | which MCP servers' tools it's allowed to reach for |
 | `loopType` | which `ILoopStrategy` drives its tool loop (`manual`, `parallel-tools`, ...) |
 | `maxIterations` | how many LLM round-trips it gets before MAVERIK gives up on it |
 
 The important part: **an agent is data, not code.** Two agents that differ only in their
-system prompt, or only in their model, are two entries in `agents.json` — not two
+system prompt, or only in their model, are two entries in `config/agents.json` — not two
 codebases. That's what makes A/B testing possible: point the same test suite at, say,
 `github-helper` and `github-helper-v2-prompt`, and any difference in the results is
 attributable to the one thing you changed.
@@ -98,9 +98,9 @@ attributable to the one thing you changed.
 ## ✨ Features
 
 - **Agent configurations as data** — prompt, model, MCP servers, loop type, and iteration cap
-  live in `agents.json`; comparing two agents is a config edit, not a code change.
+  live in `config/agents.json`; comparing two agents is a config edit, not a code change.
 - **Multi-provider model registry** — Anthropic and any OpenAI-compatible endpoint
-  (OpenAI, Ollama, LM Studio, vLLM, …) side by side in `llm-models.json`.
+  (OpenAI, Ollama, LM Studio, vLLM, …) side by side in `config/llm-models.json`.
 - **Pluggable host-loop strategies** — `manual` (sequential tool calls) and `parallel-tools`
   (concurrent tool calls per turn) out of the box, behind a small `ILoopStrategy` seam.
 - **Four criterion types** — `exact`, `contains`, `regex`, and `llm-judge` with a free-text
@@ -123,11 +123,11 @@ attributable to the one thing you changed.
  POST /api/maverik/runs ─► run queue ─► MaverikRunner                       │
                      │                     │  for each agent × question × N │
                      │                     ▼                                │
-                     │               ILoopStrategy ◄──── agents.json        │
+                     │           ILoopStrategy ◄──── config/agents.json     │
                      │             (manual / parallel)                      │
                      │                 │         │                          │
                      │       LLM models│         │MCP tool calls            │
-                     │ (llm-models.json)         (mcp-servers.json)         │
+                     │ (config/llm-models.json)  (config/mcp-servers.json)  │
                      │                     │                                │
                      │                     ▼                                │
                      │             CriterionEvaluator (exact/contains/      │
@@ -155,26 +155,26 @@ container.
 
 ### 1. Fill out the config files
 
+Every real config file lives in `./config/` and has a committed `*.example.*` template next to
+it — copy each one and edit the copy:
+
 ```powershell
 git clone <this-repo>
 cd maverik
 
-cp .env.example .env                                # secrets: API keys, tokens
-cp llm-models.example.json llm-models.json          # LLM models, referencing .env by name
-cp docker-compose.example.yml docker-compose.yml     # ports, mounts, env_file
-
-# Author these directly — no committed .example (see Configuration below for the schemas)
-#   mcp-servers.json
-#   agents.json
-#   maverik-suites/*.json
+cp config/.env.example config/.env                             # secrets: API keys, tokens
+cp config/llm-models.example.json config/llm-models.json       # LLM models, referencing .env by name
+cp config/mcp-servers.example.json config/mcp-servers.json     # MCP servers to connect to
+cp config/agents.example.json config/agents.json               # agent configurations under test
+cp docker-compose.example.yml docker-compose.yml               # ports, mounts, env_file
 ```
 
-Secrets never go in JSON config files — put real values in `.env` (gitignored), then
+Secrets never go in JSON config files — put real values in `config/.env` (gitignored), then
 reference them by name as `${VAR_NAME}` in `mcp-servers.json` headers or `llm-models.json`'s
-`apiKey` field. `docker-compose.yml` loads `.env` straight into the container via `env_file:`,
-so any variable you add there is available for expansion without touching the compose file.
-**Never paste real secrets into a chat/terminal session that gets logged — edit `.env` directly
-in a file editor.**
+`apiKey` field. `docker-compose.yml` loads `config/.env` straight into the container via
+`env_file:`, so any variable you add there is available for expansion without touching the
+compose file. **Never paste real secrets into a chat/terminal session that gets logged — edit
+`config/.env` directly in a file editor.**
 
 ### 2. `docker compose up -d`
 
@@ -202,18 +202,22 @@ curl http://localhost:5088/api/maverik/runs/github-basics-20260709-141502/summar
 
 ## ⚙️ Configuration
 
+Everything user-editable lives under `./config/`; `docker-compose.yml` bind-mounts each file
+into the container read-only. Every real file below is gitignored and has a matching committed
+`config/*.example.*` template to copy from:
+
 | File | What it defines |
 | --- | --- |
-| `.env` | Real secret values (API keys, tokens). Gitignored; copy from `.env.example`. Loaded into the container by `docker-compose.yml`'s `env_file:`. |
-| `llm-models.json` | LLM models across providers, plus optional per-MTok pricing; `apiKey` supports `${VAR_NAME}` expansion against `.env`. Gitignored (secrets); copy from `llm-models.example.json`. |
-| `mcp-servers.json` | MCP servers (name, HTTP endpoint, headers with `${VAR_NAME}` expansion against `.env`). Gitignored. |
-| `agents.json` | The agent configurations under test. Gitignored. |
-| `maverik-suites/*.json` | Test suites: questions, criteria, default agent set, judge model. |
-| `prompts/agent/<id>.md` | An agent's system prompt, when not defined inline. |
+| `config/.env` | Real secret values (API keys, tokens). Copy from `config/.env.example`. Loaded into the container by `docker-compose.yml`'s `env_file:`. |
+| `config/llm-models.json` | LLM models across providers, plus optional per-MTok pricing; `apiKey` supports `${VAR_NAME}` expansion against `.env`. Copy from `config/llm-models.example.json`. |
+| `config/mcp-servers.json` | MCP servers (name, HTTP endpoint, headers with `${VAR_NAME}` expansion against `.env`). Copy from `config/mcp-servers.example.json`. |
+| `config/agents.json` | The agent configurations under test. Copy from `config/agents.example.json`. |
+| `config/maverik-suites/*.json` | Test suites: questions, criteria, default agent set, judge model. |
+| `config/prompts/agent/<id>.md` | An agent's system prompt, when not defined inline. |
 
 Both `mcp-servers.json` headers and `llm-models.json`'s `apiKey` share the same `${VAR_NAME}`
-expansion (`src/config/EnvExpansion.cs`): a variable referenced but not defined in `.env` fails
-startup with a clear error rather than sending an empty credential.
+expansion (`maverik/src/config/EnvExpansion.cs`): a variable referenced but not defined in
+`config/.env` fails startup with a clear error rather than sending an empty credential.
 
 ### An agent configuration
 
@@ -222,15 +226,15 @@ startup with a clear error rather than sending an empty credential.
   "id": "github-helper-v2",
   "name": "GitHub Helper (v2 prompt)",
   "description": "Tighter prompt; should reduce tool-call count.",
-  "model": "claude-sonnet",           // an id from llm-models.json
+  "model": "claude-sonnet",           // an id from config/llm-models.json
   "loopType": "parallel-tools",       // "manual" (default) or "parallel-tools"
-  "mcpServers": [ "github" ],         // names from mcp-servers.json — the agent only sees these tools
+  "mcpServers": [ "github" ],         // names from config/mcp-servers.json — the agent only sees these tools
   "maxIterations": 8                  // cap on LLM round-trips per question
 }
 ```
 
 The system prompt is either inline (`"systemPrompt": "..."`) or in
-`prompts/agent/github-helper-v2.md` — perfect for versioning prompt experiments in git.
+`config/prompts/agent/github-helper-v2.md` — perfect for versioning prompt experiments in git.
 
 ### A model with pricing
 
@@ -239,7 +243,7 @@ The system prompt is either inline (`"systemPrompt": "..."`) or in
   "id": "claude-sonnet",
   "provider": "anthropic",
   "model": "claude-sonnet-5",
-  "apiKey": "${ANTHROPIC_API_KEY}",   // expanded against .env at model-load time
+  "apiKey": "${ANTHROPIC_API_KEY}",   // expanded against config/.env at model-load time
   "inputPricePerMTok": 3.00,          // optional — enables cost estimation
   "outputPricePerMTok": 15.00
 }
@@ -247,7 +251,7 @@ The system prompt is either inline (`"systemPrompt": "..."`) or in
 
 ## 🧪 Defining a test suite
 
-One file per suite in `maverik-suites/`:
+One file per suite in `config/maverik-suites/`:
 
 ```jsonc
 {
@@ -405,7 +409,7 @@ A minimal reference client lives under `wwwroot/` — open `http://localhost:508
 
 ## 🐛 Debugging
 
-Uncomment the `MCPHOST_LLM_DEBUG=1` line in `.env` and every raw LLM HTTP exchange — agent
+Uncomment the `MCPHOST_LLM_DEBUG=1` line in `config/.env` and every raw LLM HTTP exchange — agent
 *and* judge traffic — is written to `logs/{sessionId|runId}.log` on the host (via the
 `./logs:/app/logs` mount) with method, endpoint, full bodies, round-trip time, and token usage.
 Off by default with zero overhead.
@@ -418,11 +422,11 @@ HTTP endpoints.
 
 | JMeter concept | MAVERIK equivalent |
 | --- | --- |
-| Test plan | Test suite (`maverik-suites/*.json`) |
+| Test plan | Test suite (`config/maverik-suites/*.json`) |
 | Sampler (one request) | Question (one prompt + criterion) |
 | Assertion | Criterion (`exact` / `contains` / `regex` / `llm-judge`) |
 | Thread group / loop count | `repetitions` — run the same case N times to see through LLM nondeterminism |
-| Target under test | Agent configuration (`agents.json`) |
+| Target under test | Agent configuration (`config/agents.json`) |
 | Listener / results table | `GET /api/maverik/runs/{id}` + `results/{runId}/summary.csv` |
 
 ### Two kinds of parameters
@@ -469,7 +473,7 @@ you defined up front, whether the change actually helped or just moved the cost 
 
 - **Parameterized agent sweeps** — generate a matrix of `AgentConfig`s from a base config plus
   a set of variations (e.g. 3 system prompts × 2 models = 6 agents) instead of hand-authoring
-  every combination in `agents.json` — the direct analog of JMeter's CSV-driven
+  every combination in `config/agents.json` — the direct analog of JMeter's CSV-driven
   parameterization.
 - **Per-tool cost/weight tracking** — tag MCP tools with a cost weight so the summary can
   report a *weighted* tool-cost signal instead of just `toolCallCount`/`toolNames`, so

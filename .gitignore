@@ -2,9 +2,12 @@
 CLAUDE.md
 architecture-docs/
 
-# MCP Host configuration (real files hold secrets — commit the .example templates instead)
-mcp-servers.json
-llm-models.json
+# MAVERIK config (./config/) — real files hold secrets/user-specific values; every one has a
+# committed config/*.example.* template to copy from instead.
+config/.env
+config/agents.json
+config/llm-models.json
+config/mcp-servers.json
 
 # Filled-in Docker Compose config (the .example template stays committed)
 docker-compose.yml
@@ -86,11 +89,11 @@ PublishScripts/
 ScaffoldingReadMe.txt
 
 # Secrets / local config (do NOT commit tokens like your GitHub PAT).
-# The .env.example template stays committed — *.env/.env only match the filled-in copy.
+# config/.env.example stays committed — config/.env above is the only real one expected,
+# this is just a safety net for a stray .env anywhere else in the tree.
 appsettings.*.local.json
 secrets.json
 *.env
-.env
 
 # OS files
 .DS_Store

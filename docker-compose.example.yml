@@ -8,21 +8,23 @@
 # another compose service, use that service's name instead.
 services:
   maverik:
-    build: .
+    build: ./maverik
     ports:
       - "5088:8080"                       # host:container — keeps the familiar local URL
     env_file:
-      - .env   # copy .env.example -> .env and fill in real values. Every name defined there
-               # is loaded straight into the container's environment, so anything you reference
-               # as "${VAR_NAME}" in mcp-servers.json headers or llm-models.json's apiKey
-               # resolves against it — add new variables there, no compose-file edits needed.
+      - ./config/.env   # copy config/.env.example -> config/.env and fill in real values. Every
+               # name defined there is loaded straight into the container's environment, so
+               # anything you reference as "${VAR_NAME}" in config/mcp-servers.json headers or
+               # config/llm-models.json's apiKey resolves against it — add new variables there,
+               # no compose-file edits needed.
     volumes:
-      # Config: mounted read-only, never baked into the image.
-      - ./llm-models.json:/app/llm-models.json:ro
-      - ./mcp-servers.json:/app/mcp-servers.json:ro
-      - ./agents.json:/app/agents.json:ro
-      - ./prompts:/app/prompts:ro
-      - ./maverik-suites:/app/maverik-suites:ro
+      # Config: mounted read-only, never baked into the image. Every file here has a committed
+      # config/*.example.* template — copy it and edit the copy (see README's Configuration section).
+      - ./config/llm-models.json:/app/llm-models.json:ro
+      - ./config/mcp-servers.json:/app/mcp-servers.json:ro
+      - ./config/agents.json:/app/agents.json:ro
+      - ./config/prompts:/app/prompts:ro
+      - ./config/maverik-suites:/app/maverik-suites:ro
       # Output: mounted read-write so runs/logs survive the container.
       - ./results:/app/results
       - ./logs:/app/logs

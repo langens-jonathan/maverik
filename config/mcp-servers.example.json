@@ -6,7 +6,7 @@
       "transport": "http",
       "endpoint": "https://api.githubcopilot.com/mcp/",
       "headers": {
-        "Authorization": "Bearer idonotexistshaha",
+        "Authorization": "Bearer ${GITHUB_MCP_PAT}",
         "X-MCP-Readonly": "true"
       }
     },
