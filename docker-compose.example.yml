@@ -17,6 +17,8 @@ services:
                # anything you reference as "${VAR_NAME}" in config/mcp-servers.json headers or
                # config/llm-models.json's apiKey resolves against it — add new variables there,
                # no compose-file edits needed.
+    environment:
+      - MAVERIK_FRONTEND_ORIGIN=http://localhost:5090   # CORS: must match maverik-frontend's published port below
     volumes:
       # Config: mounted read-only, never baked into the image. Every file here has a committed
       # config/*.example.* template — copy it and edit the copy (see README's Configuration section).
@@ -30,3 +32,17 @@ services:
       - ./logs:/app/logs
     extra_hosts:
       - "host.docker.internal:host-gateway"   # lets the container reach MCP servers on the host (needed on Linux)
+
+  # Static React dashboard: visualize test plans, kick off runs, see per-agent results compared
+  # side by side. Talks to `maverik` directly from the browser (not container-to-container), so
+  # only the backend needs CORS configured for this origin (see MAVERIK_FRONTEND_ORIGIN above).
+  maverik-frontend:
+    build:
+      context: ./frontend
+      args:
+        VITE_API_BASE_URL: http://localhost:5088   # must match maverik's published port above;
+                                                     # baked into the bundle at build time
+    ports:
+      - "5090:80"
+    depends_on:
+      - maverik

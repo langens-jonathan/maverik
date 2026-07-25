@@ -12,6 +12,11 @@ config/mcp-servers.json
 # Filled-in Docker Compose config (the .example template stays committed)
 docker-compose.yml
 
+# frontend/ (Node/Vite) build artifacts and dependencies — frontend/.env.example stays committed,
+# *.env below already covers a real frontend/.env
+frontend/node_modules/
+frontend/dist/
+
 # Per-session LLM wire logs (MCPHOST_LLM_DEBUG)
 logs/
 

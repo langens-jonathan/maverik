@@ -18,7 +18,7 @@
 ![MCP](https://img.shields.io/badge/protocol-MCP-orange)
 ![Docker](https://img.shields.io/badge/docker-ready-2496ED)
 
-[Quick start](#-quick-start) · [Define a suite](#-defining-a-test-suite) ·
+[Quick start](#-quick-start) · [Frontend](#-frontend) · [Define a suite](#-defining-a-test-suite) ·
 [Run a benchmark](#-running-a-benchmark) · [Metrics](#-metrics) · [API](#-api-reference) ·
 [Roadmap](#-roadmap)
 
@@ -137,6 +137,12 @@ attributable to the one thing you changed.
                      └──────────────────────────────────────────────────────┘
 ```
 
+The `maverik-frontend` dashboard is just a browser-side client of this same API — it calls
+`GET /api/maverik/suites/{id}` to render a test plan, `POST /api/maverik/runs` to execute it, and
+polls `GET /api/maverik/runs/{id}` + `.../summary` to show progress and the side-by-side
+comparison. It runs in its own container and talks to `maverik` over HTTP from the browser, not
+container-to-container — see [Frontend](#-frontend) below.
+
 Every question runs in **complete isolation**: a fresh conversation seeded with the agent's
 system prompt, no shared history, no sessions. The runner executes cases **sequentially** so
 timing numbers stay clean. And critically, the benchmark runner and the interactive chat mode
@@ -187,9 +193,12 @@ your benchmark data survives the container. Remember that *inside* the container
 `localhost` is the container — MCP servers running on your host machine are reached via
 `http://host.docker.internal:...` (already wired up in the compose template).
 
-### 3. Browse to `http://localhost:5088`
+### 3. Browse to `http://localhost:5090` (dashboard) or `http://localhost:5088` (raw API)
 
 ### 4. Fire your first benchmark
+
+Through the dashboard: open a test plan, pick agents/repetitions, click **Start run**, watch it
+progress and compare results. Or drive the API directly:
 
 ```bash
 curl -X POST http://localhost:5088/api/maverik/runs \
@@ -199,6 +208,24 @@ curl -X POST http://localhost:5088/api/maverik/runs \
 
 curl http://localhost:5088/api/maverik/runs/github-basics-20260709-141502/summary
 ```
+
+## 🖥️ Frontend
+
+`./frontend/` is a small React (Vite) dashboard, shipped as its own `maverik-frontend` Compose
+service — the `maverik` container stays backend-only. `docker compose up -d --build` builds and
+runs both; the frontend is a static build served by nginx, and it talks to `maverik`'s API
+directly from your browser (not container-to-container), so no MCP-style networking concerns
+apply here.
+
+It gives you three views: **Test plans** (a suite's questions and criteria — the test plan
+itself), a **run form** on each test plan (pick agents/repetitions, start a run), and **Runs**
+(live progress while a run executes, then the per-agent comparison — pass rate, duration,
+tokens, estimated cost — plus a per-case results table once it's done).
+
+Because the API URL is baked into the static build at image-build time (Vite's `VITE_API_BASE_URL`,
+set via the `args:` block in `docker-compose.yml`), if you change `maverik`'s published port from
+the default `5088`, update both that `args:` value *and* the `maverik` service's
+`MAVERIK_FRONTEND_ORIGIN` (used for CORS) to match your `maverik-frontend` port, then rebuild.
 
 ## ⚙️ Configuration
 
@@ -399,6 +426,7 @@ A minimal reference client lives under `wwwroot/` — open `http://localhost:508
 | GET | `/api/agents` | List agent configurations (id, name, description, model, loop type, servers). |
 | GET | `/api/tools` | The aggregated MCP tool catalog, grouped by server. |
 | GET | `/api/maverik/suites` | List loaded test suites. |
+| GET | `/api/maverik/suites/{id}` | Full suite detail: questions + criteria (the test plan itself). |
 | POST | `/api/maverik/runs` | Start a run: `{ suiteId, agentIds?, repetitions? }` → `{ runId }`. |
 | GET | `/api/maverik/runs` | List runs with state and progress. |
 | GET | `/api/maverik/runs/{id}` | Full run status incl. per-case results (poll while running). |
@@ -462,13 +490,6 @@ you defined up front, whether the change actually helped or just moved the cost 
 
 ## 🗺️ Roadmap
 
-### Near-term — close the docs/code gap
-
-- **Comparison summary endpoint** — `GET /api/maverik/runs/{id}/summary` +
-  `results/{runId}/summary.json`: per-agent pass rate, avg duration/tokens/iterations/tool
-  calls, estimated cost, and judge overhead, side by side. This is the "JMeter moment" the
-  rest of the README already describes — it just isn't built yet.
-
 ### Making the tune-and-compare workflow easier
 
 - **Parameterized agent sweeps** — generate a matrix of `AgentConfig`s from a base config plus
@@ -484,9 +505,13 @@ you defined up front, whether the change actually helped or just moved the cost 
 
 ### Result analysis and visibility
 
-- **Web dashboard** — run browser, side-by-side agent charts, pass-rate trends.
 - **Statistical rigor** — percentiles and std-dev over repetitions, flakiness detection.
-- **Run history across restarts** — rehydrate past runs from `results/` at startup.
+- **Run history across restarts** — rehydrate past runs from `results/` at startup; the
+  `maverik-frontend` dashboard (see [Frontend](#-frontend)) currently only sees runs still held
+  by the in-memory `MaverikRunStore`, so a restarted `maverik` container means an empty Runs list
+  even though the `results/{runId}/` files on disk are untouched.
+- **Pass-rate trends over time** — now that a per-run summary exists, chart it across runs of
+  the same suite, not just within one.
 
 ### Other
 

@@ -11,6 +11,15 @@ using Microsoft.Extensions.AI;
 
 var builder = WebApplication.CreateBuilder(args);
 
+// --- CORS (frontend) ---
+// The maverik-frontend container is a separate origin (different published port), so the
+// browser needs CORS to call this API. None of the endpoints it uses (agents/tools/maverik/*)
+// touch the session cookie — that's only /api/session, /api/chat, /api/messages — so a plain
+// policy without AllowCredentials is enough and the chat cookie flow is untouched.
+var frontendOrigin = Environment.GetEnvironmentVariable("MAVERIK_FRONTEND_ORIGIN") ?? "http://localhost:5090";
+builder.Services.AddCors(o => o.AddPolicy("frontend", p =>
+    p.WithOrigins(frontendOrigin).AllowAnyHeader().AllowAnyMethod()));
+
 // --- Session ---
 // Each browser gets a session cookie; conversation history and the outbox are keyed by the
 // session id.
@@ -136,6 +145,7 @@ app.Services.GetRequiredService<MaverikSuiteRegistry>();
 app.UseDefaultFiles();
 app.UseStaticFiles();
 
+app.UseCors("frontend");
 app.UseSession();
 
 // --- API (the backend that ports to the platform) ---
@@ -193,6 +203,14 @@ app.MapGet("/api/maverik/suites", (MaverikSuiteRegistry suites) =>
         s.JudgeModel,
         questionCount = s.Questions.Count
     })));
+
+// Full detail of one suite — questions and criteria included — so a UI can render the test plan
+// itself, not just a count.
+app.MapGet("/api/maverik/suites/{suiteId}", (string suiteId, MaverikSuiteRegistry suites) =>
+{
+    try { return Results.Ok(suites.Resolve(suiteId)); }
+    catch (InvalidOperationException ex) { return Results.NotFound(new { error = ex.Message }); }
+});
 
 // Start a benchmark run. All ids are validated HERE so mistakes fail at request time with a
 // 400, not mid-run; the runner can then assume a well-formed request. Returns { runId }
@@ -254,6 +272,16 @@ app.MapGet("/api/maverik/runs", (MaverikRunStore store) =>
 // Full status of one run, per-case results included — poll this while the run executes.
 app.MapGet("/api/maverik/runs/{runId}", (string runId, MaverikRunStore store) =>
     store.Get(runId) is { } run ? Results.Ok(run) : Results.NotFound(new { error = $"No run '{runId}'." }));
+
+// Per-agent aggregates + cost estimates + judge overhead — the comparison view. Computed live
+// from whatever results exist so far, so this also works on a still-running run (it just
+// reflects partial progress); the same computation is persisted as summary.json once a run
+// completes (see MaverikRunner/MaverikResultsWriter).
+app.MapGet("/api/maverik/runs/{runId}/summary", (
+    string runId, MaverikRunStore store, MaverikSuiteRegistry suites, AgentRegistry agents, LLMModelRegistry models) =>
+    store.Get(runId) is { } run
+        ? Results.Ok(MaverikSummaryBuilder.Build(run, suites, agents, models))
+        : Results.NotFound(new { error = $"No run '{runId}'." }));
 
 app.Run();
 

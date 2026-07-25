@@ -91,7 +91,8 @@ public sealed class MaverikRunner(
         status = status with { State = "completed", FinishedAt = DateTimeOffset.UtcNow };
         store.Set(status);
 
-        await writer.WriteAsync(status, ct);
+        var summary = MaverikSummaryBuilder.Build(status, suites, agents, models);
+        await writer.WriteAsync(status, summary, ct);
 
         log.LogInformation("Run '{RunId}' completed: {Passed}/{Evaluated} passed, {Errors} error(s).",
             request.RunId,

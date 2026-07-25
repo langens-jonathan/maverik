@@ -13,7 +13,7 @@ public sealed class MaverikResultsWriter(string contentRootPath, ILogger<Maverik
         WriteIndented = true
     };
 
-    public async Task WriteAsync(RunStatus run, CancellationToken ct)
+    public async Task WriteAsync(RunStatus run, RunSummary summary, CancellationToken ct)
     {
         try
         {
@@ -23,6 +23,10 @@ public sealed class MaverikResultsWriter(string contentRootPath, ILogger<Maverik
             await File.WriteAllTextAsync(
                 Path.Combine(dir, "run.json"),
                 JsonSerializer.Serialize(run, JsonOptions), ct);
+
+            await File.WriteAllTextAsync(
+                Path.Combine(dir, "summary.json"),
+                JsonSerializer.Serialize(summary, JsonOptions), ct);
 
             await File.WriteAllTextAsync(
                 Path.Combine(dir, "summary.csv"),

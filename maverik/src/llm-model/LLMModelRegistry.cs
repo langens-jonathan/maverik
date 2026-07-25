@@ -49,6 +49,12 @@ public sealed class LLMModelRegistry(
             $"No LLM model with id '{id}' — check llm-models.json or the agent's model.");
     }
 
+    // Config lookup (pricing, provider, etc.) rather than a live client. Unlike Resolve, an
+    // unknown id returns null instead of throwing — a missing/bad model id when computing a
+    // benchmark summary should just mean "no pricing available," not blow up the results view.
+    public LLMModelConfig? ResolveConfig(string? id) =>
+        string.IsNullOrEmpty(id) ? null : configs.FirstOrDefault(c => c.Id == id);
+
     private IChatClient createClient(LLMModelConfig config)
     {
         // ${ENV_VAR} in apiKey (e.g. "${ANTHROPIC_API_KEY}") resolves against the environment
