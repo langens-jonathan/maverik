@@ -656,6 +656,90 @@ Only once that's pinned down do you sweep the tunable parameters — try a tight
 prompt, a cheaper model, a parallel-tools loop — and let MAVERIK tell you, in the same units
 you defined up front, whether the change actually helped or just moved the cost around.
 
+## 🔗 CI/CD integration
+
+Everything above — starting a run, reading results, editing agents and MCP servers, building
+dashboards and reports, even toggling wire-level logging — is reachable over the plain HTTP API
+in the [reference table](#-api-reference), plus a `config/`/`results/` directory that's just
+files (bind-mounted read-write). None of it requires the dashboard UI. That combination is what
+makes MAVERIK straightforward to wire into an existing pipeline — TeamCity, Jenkins, GitHub
+Actions, anything that can run a scheduled job and speak HTTP — rather than a separate tool
+someone has to babysit by hand.
+
+### Nightly agent regression runs
+
+The loop a CI job needs is the same one a person uses interactively, just scripted:
+
+1. `POST /api/maverik/runs` with `{ suiteId, agentIds?, repetitions? }` → `{ runId }` immediately
+   (the run is queued, not executed synchronously in the request).
+2. Poll `GET /api/maverik/runs/{runId}` until `state` is `completed` or `failed`.
+3. Read `GET /api/maverik/runs/{runId}/summary` for the per-agent aggregate — or, if the CI
+   runner shares the results volume, read `results/{runId}/run.json`/`summary.csv` straight off
+   disk.
+
+Every finished run also drops one `SuiteRunRecord` per agent under `results/suite-runs/*.json` —
+self-contained, timestamped, independently addressable — which is exactly what
+`GET /api/maverik/suite-runs?suiteIds=&from=&to=` lists back out. A nightly job doesn't need any
+extra bookkeeping to build up history: run the suite every night and the comparable-over-time
+dataset accumulates on its own, ready for the [Trends Over Time](#dashboards) dashboard to
+render without further setup.
+
+### Reports as the standing CI artifact
+
+A `ReportConfig` (`{ title, filter: { suiteIds, from?, to? }, dashboardId }`) is a saved,
+reusable *question* — "how did suite X look over the last N days?" — not a snapshot frozen at
+creation time. Wire one up once (`POST /api/reporting/reports`, or drop a JSON file under
+`config/reporting/reports/` directly) pointing at a fixed suite and a rolling window, and it
+answers freshly every time it's opened — including by tonight's job, tomorrow's, and a person
+checking in from the dashboard a week later, all reading the same live-resolved answer.
+
+For pulling result data into another system (a build dashboard, a chat digest, a gate that fails
+the build on a pass-rate drop), consume `GET /api/maverik/suite-runs` directly rather than
+round-tripping through the rendered report — it's the same numbers the report's CSV export
+produces, without needing a browser. **PDF export is the one piece that's client-rendered**
+(`html2canvas` rasterizes the page, `jsPDF` paginates it — see [Reports](#reports)); there's no
+server-side "give me a PDF" endpoint. A pipeline that wants the actual PDF file (e.g. to attach
+to a release) needs a small headless-browser step — open `/reporting/reports/{id}`, click
+Export → To PDF, pick up the download — while a pipeline that just wants the numbers should read
+the API/CSV path instead. PDF is built for a person to read, not for automation to parse.
+
+### Turning on dev mode for a deeper run
+
+`POST /api/dev-mode` with `{ enabled: true }` turns on full wire-level LLM request/response
+logging before a run, and `{ enabled: false }` turns it back off — useful as an occasional
+"investigate this regression" pipeline stage without paying the logging cost (and disk usage) on
+every ordinary nightly run. The toggle only affects calls made after it flips, so turn it on
+*before* starting the run you want captured, and remember a run already in flight when you flip
+it off ends up with a partial log (see [Debugging / Dev mode](#-debugging--dev-mode)).
+
+### Testing your MCP server, not just your agent
+
+An agent config only names which MCP servers it's allowed to use —
+`"mcpServers": ["my-server"]` — it never records that server's tools, descriptions, or schemas.
+Those are resolved live, at connect time, from whatever the server currently advertises. That has
+a useful consequence: **a MAVERIK suite re-exercises the live state of your MCP server on every
+run, not a frozen snapshot of it.** If you're developing an MCP server alongside the agents that
+use it, the same nightly suite that catches an agent-prompt regression also catches an
+MCP-server regression — rename a tool, tighten a description, add a required parameter, and the
+very next run's pass rate and tool-call counts move, with nothing in `agents.json` having
+changed at all. That's a second, independent test surface a CI pipeline gets for free just by
+pointing a suite at the tools in question — genuinely useful for catching the kind of change that
+lives entirely outside the agent spec and would otherwise only surface when a user hits it.
+
+One operational caveat worth planning around: unlike agents/models/suites, `mcp-servers.json` is
+**not** hot-reloadable — `PUT /api/config/mcp-servers` always returns `restartRequired: true`
+(see [Configuration](#-configuration)). A pipeline that also deploys a new version of the MCP
+server under test needs to restart the MAVERIK container (`docker compose restart`) as its own
+pipeline step, before the next suite run picks up the new tool catalog — otherwise the
+already-connected session just keeps serving the old one.
+
+### A note on trust
+
+None of this is authenticated — MAVERIK is a self-hosted, single-user tool by design, and every
+endpoint above assumes whoever can reach it is trusted. That's fine for a CI runner on a private
+network talking to a container it manages itself; it is not something to expose on the open
+internet.
+
 ## 🗺️ Roadmap
 
 ### Making the tune-and-compare workflow easier
