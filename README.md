@@ -769,6 +769,10 @@ server under test needs to restart the MAVERIK container (`docker compose restar
 pipeline step, before the next suite run picks up the new tool catalog — otherwise the
 already-connected session just keeps serving the old one.
 
+See [`CI-CD Tutorial.md`](CI-CD%20Tutorial.md) for a full worked-out example of how this could be
+done — a Jenkins pipeline that restarts MAVERIK and re-runs a suite on every commit to an MCP server's
+own repo, then fails the build if pass rate drops or cost regresses against the previous run.
+
 ### A note on trust
 
 None of this is authenticated — MAVERIK is a self-hosted, single-user tool by design, and every
