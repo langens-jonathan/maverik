@@ -13,6 +13,17 @@ config/tool-costs.json
 # Filled-in Docker Compose config (the .example template stays committed)
 docker-compose.yml
 
+# MAVERIK test suites — only the built-in "smoke" suite ships as a committed default/example;
+# every other suite here is your own test data (agent ids, expected answers, etc. specific to
+# your setup) and isn't meant to be committed.
+config/maverik-suites/*.json
+!config/maverik-suites/smoke.json
+
+# Reporting: saved reports are inherently instance-specific (a suite/date-range filter someone
+# picked for themselves) — unlike dashboards/visualizations there's no "default" report, so none
+# of these are committed.
+config/reporting/reports/
+
 # frontend/ (Node/Vite) build artifacts and dependencies — frontend/.env.example stays committed,
 # *.env below already covers a real frontend/.env
 frontend/node_modules/
