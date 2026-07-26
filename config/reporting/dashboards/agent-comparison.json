@@ -12,11 +12,15 @@
         {
           "ref": "cost-vs-correctness",
           "title": "Cost vs. correctness"
+        },
+        {
+          "ref": "agent-average-overall-cost",
+          "title": "Overall Cost Per Agent"
         }
       ]
     },
     {
-      "title": "Correctness & reliability",
+      "title": "Correctness \u0026 reliability",
       "visualizations": [
         {
           "ref": "agent-average-correctness",
@@ -24,11 +28,11 @@
         },
         {
           "ref": "question-pass-rate-matrix",
-          "title": "Pass rate by question & agent"
+          "title": "Pass rate by question \u0026 agent"
         },
         {
           "ref": "reliability-by-agent",
-          "title": "Error rate & iteration-limit hits by agent"
+          "title": "Error rate \u0026 iteration-limit hits by agent"
         }
       ]
     },

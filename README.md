@@ -22,6 +22,8 @@
 [Run a benchmark](#-running-a-benchmark) · [Metrics](#-metrics) · [API](#-api-reference) ·
 [Roadmap](#-roadmap)
 
+![Agent Comparison report — pass rate, cost, and token/duration breakdowns for two agent configurations side by side](docs/screenshots/agent-comparison-report.png)
+
 </div>
 
 ---
@@ -257,6 +259,8 @@ in-memory config keeps serving — nothing crashes. `mcp-servers.json` is the on
 requests may be in flight is more involved, so **that one still needs `docker compose restart
 maverik`** after a save (the dashboard says so explicitly).
 
+![Agents config — structured editor for an agent's model, MCP servers, and prompt, with a Duplicate button for spinning off a variant to compare](docs/screenshots/agents-config.png)
+
 | File | What it defines |
 | --- | --- |
 | `config/.env` | Real secret values (API keys, tokens). Copy from `config/.env.example`. Loaded into the container by `docker-compose.yml`'s `env_file:`. |
@@ -355,6 +359,18 @@ or missing criterion fields fail fast with a clear message.
 
 ## 🏁 Running a benchmark
 
+Through the dashboard, a suite's page shows its questions/criteria plus a run form — pick which
+agents to include, set repetitions, hit **Start run**:
+
+![Test plan detail — a suite's questions and criteria table, with the agent-picker run form below it](docs/screenshots/test-plan-detail.png)
+
+...and the run's page compares them live as results come in — pass rate, duration, tokens, and
+cost, per agent, side by side:
+
+![Run comparison — per-agent pass rate, duration, token, and cost bars for a completed run](docs/screenshots/run-comparison.png)
+
+Or drive the same thing over the API directly:
+
 ```bash
 # Start a run (agents defaults to the suite's list; repetitions defaults to 1)
 POST /api/maverik/runs
@@ -441,6 +457,8 @@ agent from a dropdown, type, watch progress lines (`(calling get_issues ...)`) a
 agent works, then the final answer. Switching the agent dropdown — or hitting "New
 conversation" — starts a clean conversation; nothing carries over.
 
+![Chat REPL — a conversation with an agent, showing a tool-call progress line and the final answer](docs/screenshots/chat-repl.png)
+
 Under the hood it's the same simple polling chat API the backend has always had, unchanged in
 shape:
 
@@ -520,7 +538,10 @@ functions you write yourself, rendering either a chart or a table (there's no se
 type — both have the identical contract, so it's just a matter of what a given function draws) —
 and preview them against real MAVERIK results. This is the data-visualization layer for comparing
 runs. **Dashboards** compose several visualizations into titled sections — see below.
-**Reports** filter/select suite-runs and feed them into a dashboard — also below.
+**Reports** filter/select suite-runs and feed them into a dashboard — also below. A saved report
+resolved against a dashboard is the screenshot at the top of this README — the same one, again:
+
+![Agent Comparison report — pass rate, cost, and token/duration breakdowns for two agent configurations side by side](docs/screenshots/agent-comparison-report.png)
 
 A visualization is a file under `config/reporting/visualizations/<id>.js`, id = filename. Unlike
 every other editable config in MAVERIK, **there's no PUT endpoint or in-app editor for these** —

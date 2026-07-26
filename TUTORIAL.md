@@ -144,6 +144,8 @@ to see exactly what the agent answered and why the criterion didn't match.
 
 Go to **Config → Agents**. Find the **coding-expert** row and click **Duplicate**.
 
+![Agents config — structured editor for an agent's model, MCP servers, and prompt, with a Duplicate button for spinning off a variant to compare](docs/screenshots/agents-config.png)
+
 A new row appears right below it — same model, same MCP servers, same everything, with a fresh
 id like `coding-expert-copy`. If the original's prompt lives in a file
 (`config/prompts/agent/coding-expert.md`, which is the default here), the duplicate's inline
@@ -170,8 +172,12 @@ click **Save** at the bottom of the page.
 ## Step 5 — Run it again, both agents together
 
 Back on **Test plans → Smoke tests**, both `coding-expert` and your duplicate are now checked by
-default. Leave them both checked — running them together means this comparison comes from one
-run instead of two — set repetitions the same as before, and **Start run**.
+default:
+
+![Test plan detail — a suite's questions and criteria table, with the agent-picker run form below it](docs/screenshots/test-plan-detail.png)
+
+Leave them both checked — running them together means this comparison comes from one run instead
+of two — set repetitions the same as before, and **Start run**.
 
 ## Step 6 — Build a comparison report
 
@@ -191,6 +197,8 @@ Go to **Reporting → Reports → + New report**.
    the same suite.
 
 ## Step 7 — Consult it
+
+![Agent Comparison report — pass rate, cost, and token/duration breakdowns for two agent configurations side by side](docs/screenshots/agent-comparison-report.png)
 
 Read the **Summary** table first — one row per agent, all 9 metrics side by side. Then look at
 whether pass rate held steady (did the terser prompt still answer correctly?) and where the
