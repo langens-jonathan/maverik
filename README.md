@@ -536,8 +536,12 @@ context tokens, token/tool/overall cost): a `runs-over-time-<metric>.js` and an
 `agent-average-<metric>.js` line chart per metric, plus three tables — `metrics-by-agent.js`,
 `metrics-by-run.js`, and `question-details.js` (per-question detail, sourced from a `results` field
 each `SuiteRunRecord` now carries — that agent's slice of the source run's per-case results, copied
-in at write time so no visualization ever needs to `fetch` back to `run.json`). See
-`config/reporting/README.md` for the full list.
+in at write time so no visualization ever needs to `fetch` back to `run.json`). Four more lean on
+that same `results` data for comparative views the single-metric grid can't do:
+`question-pass-rate-matrix.js` (a question × agent pass-rate heatmap, worst questions first),
+`cost-vs-correctness.js` (a cost-vs-accuracy scatter, one point per agent), `tool-call-frequency.js`
+(call count per tool name), and `reliability-by-agent.js` (error rate and iteration-limit-hit rate
+per agent). See `config/reporting/README.md` for the full list.
 
 ### Dashboards
 

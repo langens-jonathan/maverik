@@ -65,3 +65,14 @@ overall cost):
 `<metric>` is one of: `correctness`, `duration`, `input-tokens`, `output-tokens`, `tool-calls`,
 `context-window`, `token-cost`, `tool-cost`, `overall-cost`. These are plain files like any other
 — edit or delete them the same way you would a hand-authored one.
+
+Four more go beyond the 9-metric grid, using the per-question `results` data directly (see above):
+
+- `question-pass-rate-matrix.js` — heatmap table, one row per question, one column per agent,
+  cell = pass rate for that pair. Rows sort worst-first so the questions actually worth looking
+  at surface at the top.
+- `cost-vs-correctness.js` — scatter, one point per agent, x = overall cost, y = pass rate — the
+  accuracy-per-dollar tradeoff none of the single-metric charts show.
+- `tool-call-frequency.js` — bar chart, call count per tool name, summed across every case.
+- `reliability-by-agent.js` — table of error rate and iteration-limit-hit rate per agent, the
+  reliability signals a pass-rate number alone doesn't explain.
