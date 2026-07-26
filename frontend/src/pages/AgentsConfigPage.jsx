@@ -16,6 +16,15 @@ function emptyAgent() {
   };
 }
 
+// "<id>-copy", or "<id>-copy-2", "-3", ... if that's already taken.
+function uniqueCopyId(baseId, existingIds) {
+  const base = `${baseId}-copy`;
+  if (!existingIds.includes(base)) return base;
+  let n = 2;
+  while (existingIds.includes(`${base}-${n}`)) n++;
+  return `${base}-${n}`;
+}
+
 export function AgentsConfigPage() {
   const [data, setData] = useState(null);
   const [modelIds, setModelIds] = useState([]);
@@ -25,6 +34,8 @@ export function AgentsConfigPage() {
   const [saveError, setSaveError] = useState(null);
   const [result, setResult] = useState(null);
   const [saving, setSaving] = useState(false);
+  const [duplicatingIndex, setDuplicatingIndex] = useState(null);
+  const [duplicateError, setDuplicateError] = useState(null);
 
   useEffect(() => {
     Promise.all([api.getAgentsConfig(), api.getLlmModelsConfig(), api.getMcpServersConfig()])
@@ -50,6 +61,38 @@ export function AgentsConfigPage() {
 
   function removeAgent(index) {
     setData((d) => ({ ...d, agents: d.agents.filter((_, i) => i !== index) }));
+  }
+
+  // Copies every field of an existing agent into a new row right below it — the common case is
+  // "same tools/model, one tweaked prompt" to A/B against the original. If the source agent uses
+  // a file-based prompt (config/prompts/agent/<id>.md, systemPrompt left blank), that file is
+  // fetched and inlined into the copy instead of left blank: the new agent has no id yet at this
+  // point, so there's no file for it to fall back to — inlining is what makes the duplicate a
+  // faithful, self-contained copy rather than a silently-blank prompt.
+  async function duplicateAgent(index) {
+    const original = data.agents[index];
+    setDuplicatingIndex(index);
+    setDuplicateError(null);
+    try {
+      let systemPrompt = original.systemPrompt;
+      if (!systemPrompt) {
+        const prompt = await api.getPrompt(original.id);
+        systemPrompt = prompt.content || null;
+      }
+      const newId = uniqueCopyId(original.id, data.agents.map((a) => a.id));
+      const copy = {
+        ...original,
+        id: newId,
+        name: original.name ? `${original.name} (copy)` : "",
+        systemPrompt,
+        mcpServers: [...original.mcpServers],
+      };
+      setData((d) => ({ ...d, agents: [...d.agents.slice(0, index + 1), copy, ...d.agents.slice(index + 1)] }));
+    } catch (err) {
+      setDuplicateError(`Failed to duplicate '${original.id}': ${err.message}`);
+    } finally {
+      setDuplicatingIndex(null);
+    }
   }
 
   function toggleServer(index, server, checked) {
@@ -90,6 +133,7 @@ export function AgentsConfigPage() {
         onDismissResult={() => setResult(null)}
       />
       {saveError && <p className="error-text">{saveError}</p>}
+      {duplicateError && <p className="error-text">{duplicateError}</p>}
 
       <div className="card">
         <label>Default agent</label>
@@ -110,9 +154,14 @@ export function AgentsConfigPage() {
         <div className="config-row" key={i}>
           <div className="config-row-header">
             <h4>{a.id || `agent ${i + 1}`}</h4>
-            <button className="secondary" onClick={() => removeAgent(i)}>
-              Remove
-            </button>
+            <div className="config-row-header-actions">
+              <button className="secondary" onClick={() => duplicateAgent(i)} disabled={!a.id || duplicatingIndex === i}>
+                {duplicatingIndex === i ? "Duplicating…" : "Duplicate"}
+              </button>
+              <button className="secondary" onClick={() => removeAgent(i)}>
+                Remove
+              </button>
+            </div>
           </div>
 
           <div className="field-row">

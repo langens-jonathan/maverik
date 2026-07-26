@@ -486,6 +486,7 @@ main.wide { max-width: 1250px; }
 .config-row-header { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
 .config-row-header h4 { margin: 0; font-family: var(--font-mono); font-size: 0.88rem; color: var(--text-strong); }
 .config-row-header button { padding: 0.25rem 0.6rem; font-size: 0.72rem; }
+.config-row-header-actions { display: flex; gap: 0.5rem; }
 
 .field-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 0 1rem; }
 
