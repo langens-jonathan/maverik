@@ -1,0 +1,37 @@
+{
+  "id": "reliability-diagnostics",
+  "title": "Reliability & Diagnostics",
+  "sections": [
+    {
+      "title": "Where it's failing",
+      "visualizations": [
+        {
+          "ref": "question-pass-rate-matrix",
+          "title": null
+        },
+        {
+          "ref": "reliability-by-agent",
+          "title": null
+        }
+      ]
+    },
+    {
+      "title": "Tool usage",
+      "visualizations": [
+        {
+          "ref": "tool-call-frequency",
+          "title": null
+        }
+      ]
+    },
+    {
+      "title": "Per-question detail",
+      "visualizations": [
+        {
+          "ref": "question-details",
+          "title": null
+        }
+      ]
+    }
+  ]
+}

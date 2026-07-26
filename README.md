@@ -559,6 +559,19 @@ live via the same visualization-execution mechanism as the Visualizations tab �
 first, since a dashboard is just a client-side composition of files and run data you already have
 locally while editing.
 
+Three general-purpose dashboards ship out of the box, so you don't have to build one before you
+can look at your first runs:
+
+- **Agent Comparison** (`agent-comparison`) — cross-agent snapshot: the per-agent summary table,
+  a cost-vs-accuracy scatter, and the full `agent-average-*` metric grid. Use this to pick a
+  winner among several agents/configs run against the same suite.
+- **Trends Over Time** (`trends-over-time`) — single-agent/suite history: the per-run summary
+  table and the full `runs-over-time-*` metric grid. Use this to see whether a prompt or config
+  change helped.
+- **Reliability & Diagnostics** (`reliability-diagnostics`) — root-cause view: the question ×
+  agent pass-rate heatmap, error/iteration-limit rates, tool-call frequency, and full per-question
+  detail. Use this to find out *why* a pass rate is what it is.
+
 ### Reports
 
 A report is a saved `{ title, filter: { suiteIds, from?, to? }, dashboardId }` — the thing that

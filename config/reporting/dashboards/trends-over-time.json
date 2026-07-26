@@ -1,0 +1,71 @@
+{
+  "id": "trends-over-time",
+  "title": "Trends Over Time",
+  "sections": [
+    {
+      "title": "Summary",
+      "visualizations": [
+        {
+          "ref": "metrics-by-run",
+          "title": null
+        }
+      ]
+    },
+    {
+      "title": "Correctness",
+      "visualizations": [
+        {
+          "ref": "runs-over-time-correctness",
+          "title": null
+        }
+      ]
+    },
+    {
+      "title": "Performance",
+      "visualizations": [
+        {
+          "ref": "runs-over-time-duration",
+          "title": null
+        },
+        {
+          "ref": "runs-over-time-tool-calls",
+          "title": null
+        },
+        {
+          "ref": "runs-over-time-context-window",
+          "title": null
+        }
+      ]
+    },
+    {
+      "title": "Tokens",
+      "visualizations": [
+        {
+          "ref": "runs-over-time-input-tokens",
+          "title": null
+        },
+        {
+          "ref": "runs-over-time-output-tokens",
+          "title": null
+        }
+      ]
+    },
+    {
+      "title": "Cost",
+      "visualizations": [
+        {
+          "ref": "runs-over-time-token-cost",
+          "title": null
+        },
+        {
+          "ref": "runs-over-time-tool-cost",
+          "title": null
+        },
+        {
+          "ref": "runs-over-time-overall-cost",
+          "title": null
+        }
+      ]
+    }
+  ]
+}

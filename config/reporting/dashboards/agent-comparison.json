@@ -1,0 +1,87 @@
+{
+  "id": "agent-comparison",
+  "title": "Agent Comparison",
+  "sections": [
+    {
+      "title": "Summary",
+      "visualizations": [
+        {
+          "ref": "metrics-by-agent",
+          "title": null
+        },
+        {
+          "ref": "cost-vs-correctness",
+          "title": null
+        }
+      ]
+    },
+    {
+      "title": "Correctness & reliability",
+      "visualizations": [
+        {
+          "ref": "agent-average-correctness",
+          "title": null
+        },
+        {
+          "ref": "question-pass-rate-matrix",
+          "title": null
+        },
+        {
+          "ref": "reliability-by-agent",
+          "title": null
+        }
+      ]
+    },
+    {
+      "title": "Efficiency",
+      "visualizations": [
+        {
+          "ref": "agent-average-duration",
+          "title": null
+        },
+        {
+          "ref": "agent-average-tool-calls",
+          "title": null
+        },
+        {
+          "ref": "agent-average-context-window",
+          "title": null
+        }
+      ]
+    },
+    {
+      "title": "Tokens",
+      "visualizations": [
+        {
+          "ref": "agent-average-input-tokens",
+          "title": null
+        },
+        {
+          "ref": "agent-average-output-tokens",
+          "title": null
+        }
+      ]
+    },
+    {
+      "title": "Cost",
+      "visualizations": [
+        {
+          "ref": "agent-average-token-cost",
+          "title": null
+        },
+        {
+          "ref": "agent-average-tool-cost",
+          "title": null
+        },
+        {
+          "ref": "agent-average-overall-cost",
+          "title": null
+        },
+        {
+          "ref": "tool-call-frequency",
+          "title": null
+        }
+      ]
+    }
+  ]
+}
