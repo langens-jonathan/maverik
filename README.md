@@ -211,6 +211,10 @@ curl -X POST http://localhost:5088/api/maverik/runs \
 curl http://localhost:5088/api/maverik/runs/github-basics-20260709-141502/summary
 ```
 
+Want a slower, hands-on walkthrough instead? [`TUTORIAL.md`](TUTORIAL.md) takes you from a fresh
+clone all the way through duplicating an agent, running the built-in smoke suite against both
+versions, and building a comparison report — the full loop, step by step.
+
 ## 🖥️ Frontend
 
 `./frontend/` is a small React (Vite) dashboard, shipped as its own `maverik-frontend` Compose
