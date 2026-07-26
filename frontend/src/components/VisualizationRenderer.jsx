@@ -27,9 +27,16 @@ function loadModule(id) {
   return moduleCache.get(id);
 }
 
-export function VisualizationRenderer({ id, data }) {
+// fullWidth/halfWidth: pixel budgets for a "full row" vs. "half row" slot in whatever layout is
+// hosting this visualization (see config/reporting/README.md) — forwarded into the module's
+// default export so charts can size themselves. A module may export `layout = "full"` to claim
+// the whole row (tables do, since HTML tables already fill their container); anything else
+// defaults to "half". The layout is only known once the module has loaded, so it starts at the
+// default and flips after mount — harmless for the common case (most visualizations are "half").
+export function VisualizationRenderer({ id, data, title, fullWidth = 720, halfWidth = 560 }) {
   const containerRef = useRef(null);
   const [error, setError] = useState(null);
+  const [layout, setLayout] = useState("half");
 
   useEffect(() => {
     let cancelled = false;
@@ -42,7 +49,8 @@ export function VisualizationRenderer({ id, data }) {
         if (cancelled) return;
         if (typeof mod.default !== "function")
           throw new Error(`'${id}' has no default export function.`);
-        mod.default(container, data, { d3 });
+        setLayout(mod.layout === "full" ? "full" : "half");
+        mod.default(container, data, { d3, fullWidth, halfWidth });
       })
       .catch((err) => {
         if (!cancelled) setError(err.message || String(err));
@@ -51,10 +59,11 @@ export function VisualizationRenderer({ id, data }) {
     return () => {
       cancelled = true;
     };
-  }, [id, data]);
+  }, [id, data, fullWidth, halfWidth]);
 
   return (
-    <div className="visualization">
+    <div className={`visualization layout-${layout}`}>
+      {title && <p className="field-hint">{title}</p>}
       {error && (
         <div className="notice bad">
           <span>

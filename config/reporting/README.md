@@ -13,10 +13,13 @@ Visualizations tab, it shows up.
 Every file's default export is a function with this exact signature:
 
 ```js
-export default function(container, data, { d3 }) {
+export default function(container, data, { d3, fullWidth, halfWidth }) {
   // container: an empty <div> the host created for this visualization. Render into it.
   // data: an array of SuiteRunRecord objects (see results/suite-runs/*.json for the shape).
   // { d3 }: libraries the host injects. Don't `import` anything yourself.
+  // fullWidth/halfWidth: pixel budgets for a "full row" vs. "half row" slot in whatever layout
+  // is hosting this visualization (see "Sizing & layout" below). Not every host passes real
+  // values — treat both as optional and fall back to a sane hardcoded width if undefined.
 }
 ```
 
@@ -29,6 +32,25 @@ the container-only rule below still holds. Records written before this field exi
 
 A table-shaped visualization follows the identical signature — it's just conventional to build a
 `<table>` and append it to `container` instead of drawing SVG.
+
+## Sizing & layout
+
+A file may also export a named `layout`:
+
+```js
+export const layout = "full"; // default is "half" if this export is absent
+```
+
+Some hosts (currently the report "Open" screen) lay visualizations out in a two-column grid and
+use this to decide whether an instance gets the whole row or shares it with a neighbor. Tables
+don't need to do anything else — the global `table { width: 100% }` rule already fills whichever
+slot they're given — so only `layout = "full"` needs setting on those; charts should instead size
+their own SVG using the injected `halfWidth` (`const width = halfWidth ?? 560;`), since that's the
+slot they'll actually get. Every shipped table visualization sets `layout = "full"`; every shipped
+chart defaults to `"half"` and sizes off `halfWidth`. A host that doesn't lay things out in columns
+(e.g. the Visualizations tab's single preview) just never passes a `fullWidth`/`halfWidth` that
+differs from its own single-column width, so this is safe to ignore if you don't care about it —
+your chart will just always render at whatever `halfWidth` fallback you hardcode.
 
 ## The one rule: container-only
 

@@ -1,5 +1,6 @@
 // Plain <table> summary: one row per SuiteRunRecord in `data`.
 // See ../README.md for the function contract.
+export const layout = "full";
 export default function (container, data, { d3 }) {
   const columns = [
     ["Suite", (r) => r.suiteId],

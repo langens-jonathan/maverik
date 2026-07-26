@@ -4,6 +4,11 @@ import { api } from "../api.js";
 import { VisualizationRenderer } from "../components/VisualizationRenderer.jsx";
 import { NotFound } from "../components/NotFound.jsx";
 
+// Pixel budgets for the two-column visualization grid below — sized for this page's wider
+// `main.wide` layout (see styles.css), not the 900px width every other page uses.
+const REPORT_FULL_WIDTH = 1100;
+const REPORT_HALF_WIDTH = 538;
+
 // The plain "here's the report" view: load the saved report, resolve its filter against every
 // currently-matching suite-run (no manual narrowing — that's what Configure is for), and render
 // the dashboard against all of them. Nothing here is editable; ReportConfigurePage is one click
@@ -58,12 +63,18 @@ export function ReportViewPage() {
         dashboard.sections.map((section, sIndex) => (
           <div className="card" key={sIndex}>
             <h3>{section.title}</h3>
-            {section.visualizations.map((v, vIndex) => (
-              <div key={vIndex}>
-                {v.title && <p className="field-hint">{v.title}</p>}
-                <VisualizationRenderer id={v.ref} data={runs} />
-              </div>
-            ))}
+            <div className="viz-row">
+              {section.visualizations.map((v, vIndex) => (
+                <VisualizationRenderer
+                  key={vIndex}
+                  id={v.ref}
+                  title={v.title}
+                  data={runs}
+                  fullWidth={REPORT_FULL_WIDTH}
+                  halfWidth={REPORT_HALF_WIDTH}
+                />
+              ))}
+            </div>
           </div>
         ))
       )}

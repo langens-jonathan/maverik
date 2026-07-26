@@ -7,19 +7,19 @@
       "visualizations": [
         {
           "ref": "avg-duration-by-agent",
-          "title": null
+          "title": "Avg duration by agent"
         },
         {
           "ref": "runs-over-time-context-window",
-          "title": null
+          "title": "Avg peak context tokens over time"
         },
         {
           "ref": "runs-over-time-correctness",
-          "title": null
+          "title": "Pass rate over time"
         },
         {
           "ref": "runs-over-time-duration",
-          "title": null
+          "title": "Avg duration over time"
         }
       ]
     },
@@ -28,7 +28,7 @@
       "visualizations": [
         {
           "ref": "results-table",
-          "title": null
+          "title": "All runs"
         }
       ]
     }

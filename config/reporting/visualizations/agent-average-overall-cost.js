@@ -1,7 +1,7 @@
 // Line chart: Overall cost ($) averaged per agent, one point per agent in `data` (x-axis =
 // agent id, y-axis = the average of overall cost ($) across that agent's selected runs).
 // One of the 9 default per-agent-average outcome charts (see ../README.md).
-export default function (container, data, { d3 }) {
+export default function (container, data, { d3, halfWidth }) {
   const format = (v) => `$${v.toFixed(4)}`;
 
   const byAgent = new Map();
@@ -21,7 +21,7 @@ export default function (container, data, { d3 }) {
     return;
   }
 
-  const width = 560;
+  const width = halfWidth ?? 560;
   const height = 280;
   const margin = { top: 16, right: 20, bottom: 72, left: 64 };
   const color = "#2a78d6";

@@ -64,8 +64,18 @@ function DevModeToggle() {
   );
 }
 
+// The report "Open" screen (/reporting/reports/:id, not .../configure or .../new) is the one
+// page that wants more than the standard 900px column — it lays visualizations out two-per-row.
+// Every other page keeps the narrower width main normally gets.
+function useIsReportView() {
+  const { pathname } = useLocation();
+  const segments = pathname.split("/").filter(Boolean);
+  return segments[0] === "reporting" && segments[1] === "reports" && segments.length === 3 && segments[2] !== "new";
+}
+
 export default function App() {
   const [theme, setTheme] = useTheme();
+  const isReportView = useIsReportView();
 
   return (
     <>
@@ -102,7 +112,7 @@ export default function App() {
           </select>
         </div>
       </header>
-      <main>
+      <main className={isReportView ? "wide" : undefined}>
         <Outlet />
       </main>
     </>

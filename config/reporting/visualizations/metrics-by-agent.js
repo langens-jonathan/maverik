@@ -1,6 +1,7 @@
 // Table: all 9 outcome parameters, one row per agent — each cell averaged across that agent's
 // records in `data` (nullable metrics average only over the records that reported them).
 // See ../README.md for the function contract.
+export const layout = "full";
 export default function (container, data, { d3 }) {
   if (data.length === 0) {
     container.textContent = "No runs selected.";

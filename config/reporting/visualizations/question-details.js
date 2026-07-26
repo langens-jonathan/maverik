@@ -1,6 +1,7 @@
 // Table: one row per individual question/case, flattened out of each SuiteRunRecord's `results`
 // (that agent's slice of the source run.json's per-case detail, copied in at write time so this
 // is available directly from `data` — no fetch back to run.json needed). See ../README.md.
+export const layout = "full";
 export default function (container, data, { d3 }) {
   const rows = data
     .flatMap((r) =>

@@ -1,12 +1,12 @@
 // Bar chart: average case duration (ms) per agent, one bar per SuiteRunRecord in `data`.
 // See ../README.md for the function contract.
-export default function (container, data, { d3 }) {
+export default function (container, data, { d3, halfWidth }) {
   if (data.length === 0) {
     container.textContent = "No runs selected.";
     return;
   }
 
-  const width = 480;
+  const width = halfWidth ?? 480;
   const height = 260;
   const margin = { top: 20, right: 16, bottom: 60, left: 56 };
 

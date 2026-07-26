@@ -1,5 +1,6 @@
 // Table: all 9 outcome parameters, one row per SuiteRunRecord in `data` (no aggregation — each
 // record's own summary values, as-is). See ../README.md for the function contract.
+export const layout = "full";
 export default function (container, data, { d3 }) {
   if (data.length === 0) {
     container.textContent = "No runs selected.";

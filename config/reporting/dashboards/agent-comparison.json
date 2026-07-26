@@ -7,11 +7,11 @@
       "visualizations": [
         {
           "ref": "metrics-by-agent",
-          "title": null
+          "title": "All metrics by agent"
         },
         {
           "ref": "cost-vs-correctness",
-          "title": null
+          "title": "Cost vs. correctness"
         }
       ]
     },
@@ -20,15 +20,15 @@
       "visualizations": [
         {
           "ref": "agent-average-correctness",
-          "title": null
+          "title": "Pass rate by agent"
         },
         {
           "ref": "question-pass-rate-matrix",
-          "title": null
+          "title": "Pass rate by question & agent"
         },
         {
           "ref": "reliability-by-agent",
-          "title": null
+          "title": "Error rate & iteration-limit hits by agent"
         }
       ]
     },
@@ -37,15 +37,15 @@
       "visualizations": [
         {
           "ref": "agent-average-duration",
-          "title": null
+          "title": "Avg duration by agent"
         },
         {
           "ref": "agent-average-tool-calls",
-          "title": null
+          "title": "Avg tool calls by agent"
         },
         {
           "ref": "agent-average-context-window",
-          "title": null
+          "title": "Avg peak context tokens by agent"
         }
       ]
     },
@@ -54,11 +54,11 @@
       "visualizations": [
         {
           "ref": "agent-average-input-tokens",
-          "title": null
+          "title": "Avg input tokens by agent"
         },
         {
           "ref": "agent-average-output-tokens",
-          "title": null
+          "title": "Avg output tokens by agent"
         }
       ]
     },
@@ -67,19 +67,19 @@
       "visualizations": [
         {
           "ref": "agent-average-token-cost",
-          "title": null
+          "title": "Token cost by agent"
         },
         {
           "ref": "agent-average-tool-cost",
-          "title": null
+          "title": "Tool cost by agent"
         },
         {
           "ref": "agent-average-overall-cost",
-          "title": null
+          "title": "Overall cost by agent"
         },
         {
           "ref": "tool-call-frequency",
-          "title": null
+          "title": "Tool call frequency"
         }
       ]
     }

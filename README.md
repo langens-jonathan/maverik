@@ -513,12 +513,21 @@ write/edit them directly on disk (`config/` is already bind-mounted read-write),
 Reporting tab. Every file's default export follows one fixed contract:
 
 ```js
-export default function (container, data, { d3 }) {
+export default function (container, data, { d3, fullWidth, halfWidth }) {
   // container: an empty <div> the dashboard created for this visualization — render into it.
   // data: an array of SuiteRunRecord (results/suite-runs/*.json).
   // { d3 }: the library the host injects — don't `import` anything yourself.
+  // fullWidth/halfWidth: pixel budgets for a full-row vs. half-row slot, where the host lays
+  // visualizations out in a grid (see "Sizing & layout" in config/reporting/README.md).
 }
 ```
+
+A file can also export `const layout = "full"` (default `"half"`) so a two-column host knows
+whether to give it the whole row or share it with a neighbor — tables set this and otherwise don't
+need to do anything (`table { width: 100% }` already fills the slot), while charts size their own
+SVG off `halfWidth`. The report "Open" screen (`/reporting/reports/:id`) is the one page that lays
+things out this way, on a wider 1250px layout; every other page still renders one visualization
+per row at the usual width.
 
 Execution happens entirely in the browser (fetch the raw source, dynamic-`import()` it from a
 `Blob` URL) and is **deliberately not sandboxed** — MAVERIK is a self-hosted, single-user tool,

@@ -7,7 +7,7 @@
       "visualizations": [
         {
           "ref": "metrics-by-run",
-          "title": null
+          "title": "All metrics by run"
         }
       ]
     },
@@ -16,7 +16,7 @@
       "visualizations": [
         {
           "ref": "runs-over-time-correctness",
-          "title": null
+          "title": "Pass rate over time"
         }
       ]
     },
@@ -25,15 +25,15 @@
       "visualizations": [
         {
           "ref": "runs-over-time-duration",
-          "title": null
+          "title": "Avg duration over time"
         },
         {
           "ref": "runs-over-time-tool-calls",
-          "title": null
+          "title": "Avg tool calls over time"
         },
         {
           "ref": "runs-over-time-context-window",
-          "title": null
+          "title": "Avg peak context tokens over time"
         }
       ]
     },
@@ -42,11 +42,11 @@
       "visualizations": [
         {
           "ref": "runs-over-time-input-tokens",
-          "title": null
+          "title": "Avg input tokens over time"
         },
         {
           "ref": "runs-over-time-output-tokens",
-          "title": null
+          "title": "Avg output tokens over time"
         }
       ]
     },
@@ -55,15 +55,15 @@
       "visualizations": [
         {
           "ref": "runs-over-time-token-cost",
-          "title": null
+          "title": "Token cost over time"
         },
         {
           "ref": "runs-over-time-tool-cost",
-          "title": null
+          "title": "Tool cost over time"
         },
         {
           "ref": "runs-over-time-overall-cost",
-          "title": null
+          "title": "Overall cost over time"
         }
       ]
     }

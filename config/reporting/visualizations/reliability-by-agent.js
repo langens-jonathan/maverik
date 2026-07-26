@@ -1,6 +1,7 @@
 // Table: reliability signals per agent that the 9 headline metrics don't surface on their own —
 // error rate and how often a case hit the iteration limit, from every SuiteRunRecord's `results`
 // in `data`. A low pass rate is a symptom; this is often the cause. See ../README.md.
+export const layout = "full";
 export default function (container, data, { d3 }) {
   const cases = data.flatMap((r) => r.results ?? []);
   if (cases.length === 0) {

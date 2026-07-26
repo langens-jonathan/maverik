@@ -7,11 +7,11 @@
       "visualizations": [
         {
           "ref": "question-pass-rate-matrix",
-          "title": null
+          "title": "Pass rate by question & agent"
         },
         {
           "ref": "reliability-by-agent",
-          "title": null
+          "title": "Error rate & iteration-limit hits by agent"
         }
       ]
     },
@@ -20,7 +20,7 @@
       "visualizations": [
         {
           "ref": "tool-call-frequency",
-          "title": null
+          "title": "Tool call frequency"
         }
       ]
     },
@@ -29,7 +29,7 @@
       "visualizations": [
         {
           "ref": "question-details",
-          "title": null
+          "title": "Every question, every run"
         }
       ]
     }

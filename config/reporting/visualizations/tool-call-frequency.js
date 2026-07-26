@@ -1,7 +1,7 @@
 // Bar chart: total call count per tool name, summed across every case in every SuiteRunRecord's
 // `results` in `data` — explains what's actually driving tool cost/behavior, not just the
 // dollar total. See ../README.md for the function contract.
-export default function (container, data, { d3 }) {
+export default function (container, data, { d3, halfWidth }) {
   const counts = new Map();
   for (const r of data) {
     for (const c of r.results ?? []) {
@@ -20,7 +20,7 @@ export default function (container, data, { d3 }) {
     return;
   }
 
-  const width = 560;
+  const width = halfWidth ?? 560;
   const height = 280;
   const margin = { top: 20, right: 16, bottom: 76, left: 56 };
   const color = "#2a78d6";

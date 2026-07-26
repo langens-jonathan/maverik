@@ -1,6 +1,6 @@
 // Line chart: Pass rate over time, one point per SuiteRunRecord in `data`, x-axis = the
 // run's timestamp. One of the 9 default per-run outcome charts (see ../README.md).
-export default function (container, data, { d3 }) {
+export default function (container, data, { d3, halfWidth }) {
   const format = (v) => `${Math.round(v * 100)}%`;
 
   const points = data
@@ -13,7 +13,7 @@ export default function (container, data, { d3 }) {
     return;
   }
 
-  const width = 560;
+  const width = halfWidth ?? 560;
   const height = 280;
   const margin = { top: 16, right: 20, bottom: 44, left: 64 };
   const color = "#2a78d6";

@@ -1,7 +1,7 @@
 // Scatter: overall cost vs. pass rate, one point per agent in `data` (both averaged across that
 // agent's records in the current selection) — the accuracy-per-dollar tradeoff view none of the
 // single-metric line charts show. See ../README.md for the function contract.
-export default function (container, data, { d3 }) {
+export default function (container, data, { d3, halfWidth }) {
   function avg(values) {
     const defined = values.filter((v) => v !== null && v !== undefined);
     return defined.length === 0 ? null : defined.reduce((a, b) => a + b, 0) / defined.length;
@@ -26,7 +26,7 @@ export default function (container, data, { d3 }) {
     return;
   }
 
-  const width = 560;
+  const width = halfWidth ?? 560;
   const height = 320;
   const margin = { top: 16, right: 96, bottom: 44, left: 64 };
   const color = "#2a78d6";

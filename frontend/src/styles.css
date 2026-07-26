@@ -420,6 +420,14 @@ progress::-webkit-progress-value { background: var(--accent); border-radius: 3px
 .run-picker-row { display: flex; align-items: center; gap: 0.5rem; cursor: pointer; }
 .visualization { margin-top: 0.5rem; }
 .visualization-container { overflow-x: auto; }
+/* Only meaningful inside a flex row (.viz-row) — a no-op everywhere .visualization is just a
+   plain block child, so these are safe to apply unconditionally. */
+.visualization.layout-half { flex: 0 1 auto; }
+.visualization.layout-full { flex: 1 1 100%; }
+
+.viz-row { display: flex; flex-wrap: wrap; gap: 1.5rem; align-items: flex-start; }
+
+main.wide { max-width: 1250px; }
 
 .config-row {
   border: 1px solid var(--border-faint);
