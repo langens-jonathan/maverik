@@ -123,7 +123,8 @@ public sealed class MaverikResultsWriter(string contentRootPath, ILogger<Maverik
                     run.CreatedAt,
                     run.RunId,
                     run.JudgedMetrics,
-                    agentSummary);
+                    agentSummary,
+                    run.Results.Where(r => r.AgentId == agentSummary.AgentId).ToList());
 
                 var fileName = $"{Sanitize(run.SuiteId)}--{Sanitize(agentSummary.AgentId)}--{run.CreatedAt:yyyyMMdd-HHmmss}.json";
                 await File.WriteAllTextAsync(Path.Combine(dir, fileName), JsonSerializer.Serialize(record, JsonOptions), ct);

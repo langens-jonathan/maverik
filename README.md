@@ -526,9 +526,18 @@ so this is trusted the same way system prompts and suite definitions already are
 follow anyway: only touch `container` and the arguments you're given — no `window`/`document`
 reach-out, no `fetch`. That discipline is what would keep a future move to iframe-sandboxed
 execution a plumbing change instead of a rewrite of every visualization you've written. See
-`config/reporting/README.md` and the two shipped examples (`avg-duration-by-agent.js`, a D3 bar
-chart, and `results-table.js`, a plain `<table>`) for the full contract and a working starting
+`config/reporting/README.md` and the two hand-written examples (`avg-duration-by-agent.js`, a D3
+bar chart, and `results-table.js`, a plain `<table>`) for the full contract and a working starting
 point.
+
+Beyond those two examples, MAVERIK ships **21 default visualizations** covering the 9 outcome
+parameters every `AgentSummary` tracks (pass rate, duration, input/output tokens, tool calls, peak
+context tokens, token/tool/overall cost): a `runs-over-time-<metric>.js` and an
+`agent-average-<metric>.js` line chart per metric, plus three tables — `metrics-by-agent.js`,
+`metrics-by-run.js`, and `question-details.js` (per-question detail, sourced from a `results` field
+each `SuiteRunRecord` now carries — that agent's slice of the source run's per-case results, copied
+in at write time so no visualization ever needs to `fetch` back to `run.json`). See
+`config/reporting/README.md` for the full list.
 
 ### Dashboards
 

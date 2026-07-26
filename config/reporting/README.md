@@ -20,6 +20,13 @@ export default function(container, data, { d3 }) {
 }
 ```
 
+Each `SuiteRunRecord` also carries a `results` array — that agent's per-question detail
+(`QuestionRunResult[]`: duration, tokens, tool calls, pass/fail, error, …) from the source run,
+copied in at write time. It exists specifically so a per-question visualization (see
+`question-details.js`) can flatten `data.flatMap(r => r.results)` without ever calling `fetch` —
+the container-only rule below still holds. Records written before this field existed just have
+`results: []`.
+
 A table-shaped visualization follows the identical signature — it's just conventional to build a
 `<table>` and append it to `container` instead of drawing SVG.
 
@@ -39,3 +46,22 @@ your functions as if they were already sandboxed.
 
 See `avg-duration-by-agent.js` (a D3 bar chart) and `results-table.js` (a plain `<table>`) for
 minimal working examples — same contract, different rendering choice.
+
+## Default visualizations (the 9 outcome parameters)
+
+MAVERIK ships 21 default visualizations covering the 9 outcome parameters every `AgentSummary`
+tracks (pass rate, duration, input/output tokens, tool calls, peak context tokens, token/tool/
+overall cost):
+
+- `runs-over-time-<metric>.js` (9 files) — line chart, one point per `SuiteRunRecord` in `data`,
+  x-axis = that run's timestamp.
+- `agent-average-<metric>.js` (9 files) — line chart, one point per distinct `agentId` in `data`,
+  y-value = that metric averaged across the agent's records in the current selection.
+- `metrics-by-agent.js` — table, all 9 metrics averaged per agent.
+- `metrics-by-run.js` — table, all 9 metrics per individual run record (no aggregation).
+- `question-details.js` — table, one row per question/case, flattened out of every record's
+  `results` field (see above).
+
+`<metric>` is one of: `correctness`, `duration`, `input-tokens`, `output-tokens`, `tool-calls`,
+`context-window`, `token-cost`, `tool-cost`, `overall-cost`. These are plain files like any other
+— edit or delete them the same way you would a hand-authored one.

@@ -8,6 +8,18 @@
         {
           "ref": "avg-duration-by-agent",
           "title": null
+        },
+        {
+          "ref": "runs-over-time-context-window",
+          "title": null
+        },
+        {
+          "ref": "runs-over-time-correctness",
+          "title": null
+        },
+        {
+          "ref": "runs-over-time-duration",
+          "title": null
         }
       ]
     },

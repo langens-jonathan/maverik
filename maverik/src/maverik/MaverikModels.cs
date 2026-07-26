@@ -102,4 +102,13 @@ public sealed record SuiteRunRecord(
     DateTimeOffset Timestamp,
     string SourceRunId,                        // the batch runId, to drill into full per-case results/run.json
     IReadOnlyList<string> JudgedMetrics,
-    AgentSummary Summary);
+    AgentSummary Summary,
+    // This agent's slice of the batch's per-case results, copied in at write time so a
+    // per-question visualization has everything it needs directly from `data` — no `fetch` back
+    // to run.json required, preserving the container-only visualization contract (see
+    // config/reporting/README.md). Defaults to [] so records written before this field existed
+    // still deserialize.
+    IReadOnlyList<QuestionRunResult> Results = null!)
+{
+    public IReadOnlyList<QuestionRunResult> Results { get; init; } = Results ?? [];
+}
