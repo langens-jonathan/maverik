@@ -2,8 +2,8 @@ const API_BASE = import.meta.env.VITE_API_BASE_URL;
 
 async function request(path, options) {
   const res = await fetch(`${API_BASE}${path}`, {
-    headers: { "Content-Type": "application/json" },
     ...options,
+    headers: { "Content-Type": "application/json", ...(options?.headers || {}) },
   });
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
@@ -56,6 +56,16 @@ export const api = {
 
   getDevMode: () => request("/api/dev-mode"),
   setDevMode: (enabled) => request("/api/dev-mode", { method: "POST", body: JSON.stringify({ enabled }) }),
+
+  // Chat/REPL: conversations are identified by an opaque client-minted X-Session-Id header, not
+  // a cookie — see Program.cs's "Session" comment. sendChatMessage/pollMessages both require it.
+  sendChatMessage: (sessionId, message, agent) =>
+    request("/api/chat", {
+      method: "POST",
+      headers: { "X-Session-Id": sessionId },
+      body: JSON.stringify({ message, agent }),
+    }),
+  pollMessages: (sessionId) => request("/api/messages", { headers: { "X-Session-Id": sessionId } }),
 
   listSuiteRuns: ({ suiteIds, from, to } = {}) => {
     const params = new URLSearchParams();

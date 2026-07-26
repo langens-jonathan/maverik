@@ -26,24 +26,22 @@ builder.Services.AddSingleton(configFiles);
 
 // --- CORS (frontend) ---
 // The maverik-frontend container is a separate origin (different published port), so the
-// browser needs CORS to call this API. None of the endpoints it uses (agents/tools/maverik/*)
-// touch the session cookie — that's only /api/session, /api/chat, /api/messages — so a plain
-// policy without AllowCredentials is enough and the chat cookie flow is untouched.
+// browser needs CORS to call this API. Chat sessions are identified by a client-supplied
+// `X-Session-Id` header (see "Session" below) rather than a cookie, so this never needs
+// AllowCredentials or cookie SameSite/Secure gymnastics for cross-origin calls — a plain
+// AllowAnyHeader policy already covers it.
 var frontendOrigin = Environment.GetEnvironmentVariable("MAVERIK_FRONTEND_ORIGIN") ?? "http://localhost:5090";
 builder.Services.AddCors(o => o.AddPolicy("frontend", p =>
     p.WithOrigins(frontendOrigin).AllowAnyHeader().AllowAnyMethod()));
 
 // --- Session ---
-// Each browser gets a session cookie; conversation history and the outbox are keyed by the
-// session id.
-builder.Services.AddDistributedMemoryCache();
-builder.Services.AddSession(options =>
-{
-    options.Cookie.Name = ".McpHost.Session";
-    options.Cookie.HttpOnly = true;
-    options.Cookie.IsEssential = true;
-    options.IdleTimeout = TimeSpan.FromHours(2);
-});
+// Chat conversations are keyed by an opaque `X-Session-Id` header the client mints itself (a
+// UUID, held in memory/sessionStorage — see frontend/src/pages/ChatPage.jsx) and sends on every
+// /api/chat and /api/messages call. No cookie, no ASP.NET Core Session middleware: the frontend
+// is a separate origin (see CORS above), and an explicit header is simpler and more portable
+// than making cross-origin cookies work (SameSite=None + Secure, which plain-http deployments
+// off `localhost` can't satisfy). Starting a "new conversation" client-side is just minting a
+// new id — there's nothing server-side to reset.
 
 // --- LLM backend ---
 // Registered WITHOUT .UseFunctionInvocation(): the model returns raw FunctionCallContent and
@@ -160,29 +158,19 @@ app.Services.GetRequiredService<MaverikSuiteRegistry>();
         runStore.Set(run);
 }
 
-// --- Static test front end (NOT ported to the platform) ---
-// Serves wwwroot/index.html as a reference client and local demo. The platform hosts its own
-// front end against the /api endpoints below; this exists only for testing.
-app.UseDefaultFiles();
-app.UseStaticFiles();
-
 app.UseCors("frontend");
-app.UseSession();
 
-// --- API (the backend that ports to the platform) ---
+// --- API (this app is API-only — no static front end is served here; frontend/ is a separate
+// app/container that talks to these endpoints) ---
 
-// Establish the session cookie.
-app.MapPost("/api/session", async (HttpContext http) =>
-{
-    http.Session.SetString("touched", "1");
-    await http.Session.CommitAsync();
-    return Results.Ok(new { sessionId = http.Session.Id });
-});
-
-// Enqueue a job and return immediately; results arrive via polling /api/messages.
+// Enqueue a job and return immediately; results arrive via polling /api/messages. Both this and
+// /api/messages require the client-minted X-Session-Id header described above.
 app.MapPost("/api/chat", async (ChatRequest request, HttpContext http, ChatJobQueue queue, AgentRegistry agents) =>
 {
-    var sessionId = http.Session.Id;
+    var sessionId = http.Request.Headers["X-Session-Id"].ToString();
+    if (string.IsNullOrWhiteSpace(sessionId))
+        return Results.BadRequest(new { error = "Missing X-Session-Id header." });
+
     // Use the requested agent, or the configured default when none is given.
     var agentId = string.IsNullOrWhiteSpace(request.Agent) ? agents.DefaultAgent : request.Agent;
     await queue.EnqueueAsync(new ChatJob(sessionId, request.Message, agentId));
@@ -192,7 +180,12 @@ app.MapPost("/api/chat", async (ChatRequest request, HttpContext http, ChatJobQu
 // Poll for buffered messages (progress lines and final answers) for this session. Returns
 // and clears whatever is queued; an empty array means nothing new yet.
 app.MapGet("/api/messages", (HttpContext http, ChatOutbox outbox) =>
-    Results.Ok(new { messages = outbox.Drain(http.Session.Id) }));
+{
+    var sessionId = http.Request.Headers["X-Session-Id"].ToString();
+    if (string.IsNullOrWhiteSpace(sessionId))
+        return Results.BadRequest(new { error = "Missing X-Session-Id header." });
+    return Results.Ok(new { messages = outbox.Drain(sessionId) });
+});
 
 // Inspect the aggregated MCP tool catalog, grouped by server. No LLM involved.
 app.MapGet("/api/tools", (McpServerRegistry mcp) =>

@@ -6,6 +6,7 @@ import { SuitesPage } from "./pages/SuitesPage.jsx";
 import { SuiteDetailPage } from "./pages/SuiteDetailPage.jsx";
 import { RunsPage } from "./pages/RunsPage.jsx";
 import { RunDetailPage } from "./pages/RunDetailPage.jsx";
+import { ChatPage } from "./pages/ChatPage.jsx";
 import { ConfigPage } from "./pages/ConfigPage.jsx";
 import { AgentsConfigPage } from "./pages/AgentsConfigPage.jsx";
 import { LlmModelsConfigPage } from "./pages/LlmModelsConfigPage.jsx";
@@ -32,6 +33,7 @@ ReactDOM.createRoot(document.getElementById("root")).render(
           <Route path="suites/:suiteId" element={<SuiteDetailPage />} />
           <Route path="runs" element={<RunsPage />} />
           <Route path="runs/:runId" element={<RunDetailPage />} />
+          <Route path="chat" element={<ChatPage />} />
           <Route path="config" element={<ConfigPage />}>
             <Route index element={<Navigate to="/config/agents" replace />} />
             <Route path="agents" element={<AgentsConfigPage />} />

@@ -110,8 +110,8 @@ attributable to the one thing you changed.
   ready for Excel, pandas, or your BI tool of choice.
 - **Cost prediction** — attach per-MTok pricing to models and get estimated cost per
   question, per agent, per run.
-- **Interactive chat mode included** — poke at any agent configuration by hand through a
-  simple polling chat API before you benchmark it.
+- **Interactive chat REPL included** — poke at any agent configuration by hand, in the dashboard's
+  `Chat` tab, before you benchmark it.
 - **Wire-level debug logging ("dev mode")** — toggle at runtime (dashboard header, or
   `POST /api/dev-mode`) and every raw LLM HTTP exchange (including judge traffic) is logged with
   timings and token counts — off by default, see [Debugging / Dev mode](#-debugging--dev-mode).
@@ -222,10 +222,11 @@ apply here.
 It gives you: **Test plans** (a suite's questions and criteria — the test plan itself), a **run
 form** on each test plan (pick agents/repetitions, start a run), **Runs** (live progress while a
 run executes, then the per-agent comparison — pass rate, duration, tokens, estimated cost — plus
-a per-case results table once it's done), **Config** (structured editors for `agents.json`,
-`llm-models.json`, `mcp-servers.json`, MAVERIK suites, tool costs, and per-agent prompt files —
-see Configuration below), and **Reporting** (visualizations, composed into dashboards, filtered
-and selected via reports — see [Reporting](#-reporting) below).
+a per-case results table once it's done), **Chat** (a REPL for talking to one agent by hand — see
+[Interactive chat REPL](#-interactive-chat-repl) below), **Config** (structured editors for
+`agents.json`, `llm-models.json`, `mcp-servers.json`, MAVERIK suites, tool costs, and per-agent
+prompt files — see Configuration below), and **Reporting** (visualizations, composed into
+dashboards, filtered and selected via reports — see [Reporting](#-reporting) below).
 
 Because the API URL is baked into the static build at image-build time (Vite's `VITE_API_BASE_URL`,
 set via the `args:` block in `docker-compose.yml`), if you change `maverik`'s published port from
@@ -429,17 +430,28 @@ measurable and swappable:
 New strategies implement one small interface (`ILoopStrategy`) and become available as a
 `loopType` value — comparing loop designs is then just another benchmark run.
 
-## 💬 Interactive chat mode
+## 💬 Interactive chat REPL
 
-Before benchmarking an agent, talk to it. The classic MCP-host chat surface is still here:
+Before benchmarking an agent, talk to it. `Chat` in the dashboard is a minimal REPL: pick an
+agent from a dropdown, type, watch progress lines (`(calling get_issues ...)`) arrive as the
+agent works, then the final answer. Switching the agent dropdown — or hitting "New
+conversation" — starts a clean conversation; nothing carries over.
+
+Under the hood it's the same simple polling chat API the backend has always had, unchanged in
+shape:
 
 ```
-POST /api/session            # establish the session cookie
-POST /api/chat               # { "message": "...", "agent": "github-helper-v2" } → accepted
-GET  /api/messages           # poll: progress lines ("(calling get_issues ...)") + final answer
+POST /api/chat                # { "message": "...", "agent": "github-helper-v2" } → accepted
+GET  /api/messages             # poll: progress lines + final answer
 ```
 
-A minimal reference client lives under `wwwroot/` — open `http://localhost:5088` and chat.
+Both require an `X-Session-Id` header — an opaque id the frontend mints itself (a UUID), not a
+cookie. There's no `/api/session` endpoint to call first: an id nobody's used before just starts
+a fresh conversation the moment you send the first message under it. This is deliberate — the
+backend is **API-only** (no static front end, no `wwwroot/`, no server-side session state tied
+to a browser cookie), so the same client-supplied-id approach works identically whether you're
+driving it from the dashboard, a script, or a CI job (see
+[CI/CD integration](#-cicd-integration)).
 
 ## 📚 API reference
 
@@ -467,9 +479,8 @@ A minimal reference client lives under `wwwroot/` — open `http://localhost:508
 | GET | `/api/reporting/reports` | List all saved reports. |
 | GET | `/api/reporting/reports/{id}` | Full detail of one report: filter + dashboard id. |
 | POST/PUT/DELETE | `/api/reporting/reports[/{id}]` | Create/update/delete a report — see [Reports](#reports). |
-| POST | `/api/session` | Establish a chat session cookie. |
-| POST | `/api/chat` | Enqueue a chat message for an agent. |
-| GET | `/api/messages` | Drain buffered chat messages for the session. |
+| POST | `/api/chat` | Enqueue a chat message for an agent. Requires an `X-Session-Id` header (any client-minted opaque id — see [Interactive chat REPL](#-interactive-chat-repl)). |
+| GET | `/api/messages` | Drain buffered chat messages for the session. Same `X-Session-Id` header required. |
 
 ## 🐛 Debugging / Dev mode
 

@@ -88,6 +88,9 @@ export default function App() {
           <NavLink to="/runs" className={({ isActive }) => (isActive ? "active" : "")}>
             Runs
           </NavLink>
+          <NavLink to="/chat" className={({ isActive }) => (isActive ? "active" : "")}>
+            Chat
+          </NavLink>
           <NavLink to="/reporting" className={({ isActive }) => (isActive ? "active" : "")}>
             Reporting
           </NavLink>
