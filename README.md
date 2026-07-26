@@ -776,9 +776,10 @@ internet.
 
 ## 🤝 Contributing
 
-Issues and pull requests are welcome. Good first contributions: a new criterion type, a new
-loop strategy, or an exporter for your favorite results format. Please keep the two core
-invariants intact:
+Issues and pull requests are welcome. See [`CONTRIBUTE.md`](CONTRIBUTE.md) for the four kinds of
+contribution (a new visualization, a new dashboard, backend changes, frontend changes), a worked
+example of each, and what to check before opening a PR — there's no CI test suite, so "actually
+run it" is the bar. The two invariants that matter most if you touch the backend:
 
 1. The chat clients stay registered **without** automatic function invocation — the loop
    strategies own the tool loop, and that's what makes it measurable.
