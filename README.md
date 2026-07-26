@@ -588,7 +588,12 @@ actually answers "how did this suite's runs look over the last two weeks?" `Repo
 lists saved reports, each with two separate, deep-linkable screens:
 
 - **Open** (`/reporting/reports/:id`) — the plain result. Resolves the report's filter against
-  every currently-matching run and renders the dashboard against all of them. Read-only.
+  every currently-matching run and renders the dashboard against all of them. Read-only. Has an
+  **Export** button (top-right) with two options, each starting a download immediately — no
+  dialog, no backend round-trip, everything runs client-side against data already on the page:
+  - **To CSV** — one row per matching run, all 9 outcome parameters plus suite/agent/timestamp.
+  - **To PDF** — a rasterized, paginated snapshot of the report exactly as rendered (title,
+    section headers, every chart/table), built with `html2canvas` + `jsPDF`.
 - **Configure** (`/reporting/reports/:id/configure`, or `/reporting/reports/new` for a blank
   one) — filter + dashboard picker with a live preview:
   1. Pick one or more suites (or leave empty for "any") and an optional date range.
