@@ -3,8 +3,7 @@
   "name": "Smoke tests",
   "description": "Minimal end-to-end checks that exercise every part of the MAVERIK pipeline: a tool-using question with a deterministic criterion, and an LLM-judged question.",
   "agents": [
-    "coding-expert",
-    "coding-expert-lean"
+    "coding-expert"
   ],
   "judgeModel": "claude-haiku",
   "questions": [
