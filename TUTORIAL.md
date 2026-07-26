@@ -213,7 +213,8 @@ If you want a copy to keep or share, the **Export** button on the report page gi
 ## What you just did
 
 Every step above is the same loop, repeated: change one thing about an agent, run the same suite
-against the old and new version, look at what actually moved. `Case Study.md` in this repo walks
-through a real example of that loop turning up a genuinely non-obvious result (attaching unused
-MCP servers to an agent quietly increases its cost by ~28% per question, from tool-schema
-overhead alone) — worth a read once this tutorial's mechanics feel natural.
+against the old and new version, look at what actually moved. That exact loop is what turned up
+one genuinely non-obvious result while building this project: attaching unused MCP servers to an
+agent quietly increases its cost by ~28% per question, from tool-schema overhead alone — see
+[`CI-CD Tutorial.md`](CI-CD%20Tutorial.md) for the fuller story of why that matters for MCP
+servers specifically.

@@ -20,11 +20,11 @@ own repo, will never see this. Normal CI scoped to the *MCP server's* repo usual
 — unit tests for a tool's handler function don't tell you whether an LLM still calls it
 correctly, or how much it now costs to.
 
-This isn't hypothetical: [`Case Study.md`](Case%20Study.md) in this repo is a real measurement of
-exactly this class of regression — attaching three unused MCP servers to an otherwise-unchanged
-agent increased its cost per question by 28%, from tool-schema overhead alone, with identical
-pass rate and identical tool-call behavior. Nothing about that would show up in the MCP server's
-own unit tests, or in the agent repo's CI. It only shows up if you actually run the agent against
+This isn't hypothetical — it's a real measurement: attaching three unused MCP servers to an
+otherwise-unchanged agent increased its cost per question by 28%, from tool-schema overhead
+alone, with identical pass rate and identical tool-call behavior. Nothing about that would show
+up in the MCP server's own unit tests, or in the agent repo's CI. It only shows up if you
+actually run the agent against
 the server and measure.
 
 ## The pieces
@@ -221,7 +221,7 @@ classes of change into a build failure instead of a support ticket three weeks l
   to answer without it, and either fails outright or produces a worse answer — pass rate drops.
 - **A tool's description or schema grows.** Every connected agent's input tokens (and therefore
   cost) go up on every single call, whether the change was needed or not — exactly the effect
-  measured in `Case Study.md`.
+  described above.
 - **A tool starts behaving differently** (different response shape, slower, flakier) — shows up
   as duration or iteration-count drift even when the final answer still happens to pass.
 
