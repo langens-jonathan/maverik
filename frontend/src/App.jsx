@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { NavLink, Outlet, useLocation } from "react-router-dom";
+import { Link, NavLink, Outlet, useLocation } from "react-router-dom";
 import { THEMES, useTheme } from "./hooks/useTheme.js";
 import { api } from "./api.js";
 
@@ -80,7 +80,9 @@ export default function App() {
   return (
     <>
       <header className="app-header">
-        <h1>MAVERIK</h1>
+        <h1>
+          <Link to="/">MAVERIK</Link>
+        </h1>
         <nav>
           <NavLink to="/suites" className={({ isActive }) => (isActive ? "active" : "")}>
             Test plans
