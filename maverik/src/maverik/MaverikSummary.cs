@@ -145,6 +145,6 @@ public static class MaverikSummaryBuilder
         return new JudgeOverheadSummary(inputTokens, outputTokens, estCost);
     }
 
-    private static decimal TokenCost(long inputTokens, long outputTokens, decimal inputPricePerMTok, decimal outputPricePerMTok) =>
+    internal static decimal TokenCost(long inputTokens, long outputTokens, decimal inputPricePerMTok, decimal outputPricePerMTok) =>
         inputTokens / 1_000_000m * inputPricePerMTok + outputTokens / 1_000_000m * outputPricePerMTok;
 }

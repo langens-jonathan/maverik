@@ -13,4 +13,18 @@
     <PackageReference Include="Microsoft.Extensions.AI.OpenAI" Version="10.7.0" />
     <PackageReference Include="ModelContextProtocol" Version="1.4.0" />  </ItemGroup>
 
+  <ItemGroup>
+    <InternalsVisibleTo Include="Maverik.Tests" />
+  </ItemGroup>
+
+  <!-- Maverik.Tests lives in a subfolder of this project's directory, so the default SDK glob
+       would otherwise also compile its .cs files (and generated obj/ artifacts) into this
+       project. -->
+  <ItemGroup>
+    <Compile Remove="Maverik.Tests\**" />
+    <Content Remove="Maverik.Tests\**" />
+    <EmbeddedResource Remove="Maverik.Tests\**" />
+    <None Remove="Maverik.Tests\**" />
+  </ItemGroup>
+
 </Project>

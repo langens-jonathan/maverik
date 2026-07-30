@@ -81,7 +81,7 @@ public sealed class MaverikResultsWriter(string contentRootPath, ILogger<Maverik
         }
     }
 
-    private static string ToCsv(IReadOnlyList<QuestionRunResult> results)
+    internal static string ToCsv(IReadOnlyList<QuestionRunResult> results)
     {
         var sb = new StringBuilder();
         sb.AppendLine("agentId,questionId,repetition,durationMs,inputTokens,outputTokens,peakContextTokens,iterations,toolCalls,passed,error");
@@ -140,7 +140,7 @@ public sealed class MaverikResultsWriter(string contentRootPath, ILogger<Maverik
 
     // Minimal CSV quoting: wrap when the value contains a delimiter/quote/newline (error
     // messages often do), doubling embedded quotes.
-    private static string Escape(string? value)
+    internal static string Escape(string? value)
     {
         if (string.IsNullOrEmpty(value)) return "";
         return value.IndexOfAny([',', '"', '\n', '\r']) < 0
@@ -148,6 +148,6 @@ public sealed class MaverikResultsWriter(string contentRootPath, ILogger<Maverik
             : "\"" + value.Replace("\"", "\"\"") + "\"";
     }
 
-    private static string Sanitize(string s) =>
+    internal static string Sanitize(string s) =>
         string.Concat(s.Select(c => char.IsLetterOrDigit(c) || c is '-' or '_' ? c : '_'));
 }

@@ -1,0 +1,29 @@
+name: Backend Tests
+
+on:
+  pull_request:
+    branches: [master]
+  push:
+    branches: [master]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: maverik
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '9.0.x'
+
+      - name: Restore
+        run: dotnet restore Maverik.sln
+
+      - name: Build
+        run: dotnet build Maverik.sln --no-restore --configuration Release
+
+      - name: Test
+        run: dotnet test Maverik.sln --no-build --configuration Release --verbosity normal

@@ -5,6 +5,8 @@ VisualStudioVersion = 17.12.35707.178 d17.12
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Maverik", "Maverik.csproj", "{1080F2AA-8859-4FCD-A5E5-A641C0016E3A}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Maverik.Tests", "Maverik.Tests\Maverik.Tests.csproj", "{CA1C55EE-EA6E-4130-A037-258450DFD598}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -15,6 +17,10 @@ Global
 		{1080F2AA-8859-4FCD-A5E5-A641C0016E3A}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{1080F2AA-8859-4FCD-A5E5-A641C0016E3A}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{1080F2AA-8859-4FCD-A5E5-A641C0016E3A}.Release|Any CPU.Build.0 = Release|Any CPU
+		{CA1C55EE-EA6E-4130-A037-258450DFD598}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{CA1C55EE-EA6E-4130-A037-258450DFD598}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{CA1C55EE-EA6E-4130-A037-258450DFD598}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{CA1C55EE-EA6E-4130-A037-258450DFD598}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

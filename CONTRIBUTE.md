@@ -149,10 +149,13 @@ knowing before you touch anything:
 - **Namespace follows folder**: everything under `maverik/src/<domain>/` maps to
   `McpHost.<Domain>` (see CLAUDE.md's Conventions section for the exact list). Put new code in
   the domain folder it belongs to rather than growing `Program.cs`.
-- **There is no test project.** Verify changes by running `dotnet build` (clean compile), then
-  `docker compose up -d --build` and actually exercising the change — start a run, hit the
-  endpoint with `curl`, check `docker compose logs maverik`. This project leans hard on "does it
-  actually work end-to-end," not on a test suite catching you.
+- **Unit tests live in `maverik/Maverik.Tests/`** (xUnit) — run them with `dotnet test` from
+  `maverik/`. They cover pure business logic: config parsing, criterion evaluation, and
+  cost/summary math. They deliberately don't cover the loop, MCP, or LLM clients — verify those by
+  running `dotnet build` (clean compile), then `docker compose up -d --build` and actually
+  exercising the change — start a run, hit the endpoint with `curl`, check
+  `docker compose logs maverik`. This project still leans hard on "does it actually work
+  end-to-end" for anything the test suite doesn't reach.
 
 Good first backend contributions: a new criterion type (alongside `exact`/`contains`/`regex`/
 `llm-judge`), a new `ILoopStrategy`, or a results exporter for a format MAVERIK doesn't already
@@ -182,10 +185,11 @@ story today, a UX improvement to an existing config editor, or a new theme in `u
 ## Before you open a PR
 
 - `dotnet build` is clean (if you touched `maverik/`).
+- `dotnet test` passes, run from `maverik/` (if you touched `maverik/`) — CI runs this on every PR.
 - `npm run build` is clean (if you touched `frontend/`).
 - You've actually run the change against a real `docker compose up -d --build` and watched it
-  work — screenshots/terminal output in the PR description are appreciated, since there's no CI
-  test suite to point to instead.
+  work — screenshots/terminal output in the PR description are appreciated, since CI only runs the
+  unit test suite, not an end-to-end check.
 - If you changed documented behavior, update `CLAUDE.md` and/or `README.md` in the same PR —
   stale docs are worse than no docs.
 

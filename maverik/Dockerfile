@@ -2,9 +2,13 @@
 FROM mcr.microsoft.com/dotnet/sdk:9.0 AS build
 WORKDIR /src
 COPY Maverik.csproj .
-RUN dotnet restore
+RUN dotnet restore Maverik.csproj
 COPY . .
-RUN dotnet publish -c Release -o /app/publish
+# Explicitly target Maverik.csproj, not the directory: once Maverik.sln (added alongside
+# Maverik.Tests/) lands in /src via the COPY above, an implicit `dotnet publish` with no target
+# resolves to the .sln instead of the single top-level .csproj and would publish the test project
+# (and its xunit/coverlet packages) into the runtime image too.
+RUN dotnet publish Maverik.csproj -c Release -o /app/publish
 
 # Runtime stage
 FROM mcr.microsoft.com/dotnet/aspnet:9.0

@@ -101,7 +101,7 @@ public sealed class CriterionEvaluator(LLMModelRegistry models)
     // or add prose around it, so parse the outermost {...} span rather than the raw text. An
     // unparseable reply FAILS the case (with the raw output preserved for debugging) rather
     // than throwing — one flaky judge reply must not kill a run.
-    private static (bool Passed, string? Detail) ParseVerdict(string text)
+    internal static (bool Passed, string? Detail) ParseVerdict(string text)
     {
         var start = text.IndexOf('{');
         var end = text.LastIndexOf('}');
@@ -131,6 +131,6 @@ public sealed class CriterionEvaluator(LLMModelRegistry models)
         }
     }
 
-    private static string Truncate(string s) =>
+    internal static string Truncate(string s) =>
         s.Length <= 300 ? s : s[..300] + "...";
 }
