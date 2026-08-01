@@ -20,6 +20,11 @@ function fmtCost(c) {
 function fmtPct(p) {
   return `${Math.round(p * 100)}%`;
 }
+function fmtDigest(d) {
+  if (!d) return "—";
+  const short = d.startsWith("sha256:") ? d.slice(7, 15) : d.slice(0, 8);
+  return short;
+}
 
 function isRunActive(run) {
   return !run || run.state === "queued" || run.state === "running";
@@ -43,7 +48,12 @@ export function RunDetailPage() {
   const maxDuration = Math.max(1, ...(summary?.agents.map((a) => a.avgDurationMs) ?? [1]));
   const maxTokens = Math.max(
     1,
-    ...(summary?.agents.flatMap((a) => [a.avgInputTokens ?? 0, a.avgOutputTokens ?? 0]) ?? [1])
+    ...(summary?.agents.flatMap((a) => [
+      a.avgInputTokens ?? 0,
+      a.avgOutputTokens ?? 0,
+      a.avgCacheReadInputTokens ?? 0,
+      a.avgCacheCreationInputTokens ?? 0,
+    ]) ?? [1])
   );
   const maxCost = Math.max(1e-9, ...(summary?.agents.map((a) => a.estCostTotal ?? 0) ?? [1e-9]));
 
@@ -96,6 +106,24 @@ export function RunDetailPage() {
                   display={fmtTokens(a.avgOutputTokens)}
                   color={color}
                 />
+                {a.avgCacheReadInputTokens != null && (
+                  <BarRow
+                    label="Avg cache read tokens"
+                    value={a.avgCacheReadInputTokens}
+                    max={maxTokens}
+                    display={fmtTokens(a.avgCacheReadInputTokens)}
+                    color={color}
+                  />
+                )}
+                {a.avgCacheCreationInputTokens != null && (
+                  <BarRow
+                    label="Avg cache creation tokens"
+                    value={a.avgCacheCreationInputTokens}
+                    max={maxTokens}
+                    display={fmtTokens(a.avgCacheCreationInputTokens)}
+                    color={color}
+                  />
+                )}
                 <BarRow
                   label="Est. total cost"
                   value={a.estCostTotal ?? 0}
@@ -106,6 +134,16 @@ export function RunDetailPage() {
                 <p className="muted">
                   {a.errors} error{a.errors === 1 ? "" : "s"}
                   {a.casesWithoutUsage > 0 ? ` · ${a.casesWithoutUsage} case(s) without usage data` : ""}
+                  {a.capabilityDigest != null && (
+                    <>
+                      {" · "}
+                      {a.capabilityToolCount} tools (digest{" "}
+                      <span className="mono" title={a.capabilityDigest}>
+                        {fmtDigest(a.capabilityDigest)}
+                      </span>
+                      )
+                    </>
+                  )}
                 </p>
               </div>
             );
@@ -130,6 +168,7 @@ export function RunDetailPage() {
               <th>Rep</th>
               <th>Duration</th>
               <th>Tokens</th>
+              <th>Cache Tokens</th>
               <th>Tools</th>
               <th>Result</th>
             </tr>
@@ -148,6 +187,9 @@ export function RunDetailPage() {
                     <td className="mono">
                       {fmtTokens(c.inputTokens)}/{fmtTokens(c.outputTokens)}
                     </td>
+                    <td className="mono">
+                      {fmtTokens(c.cacheReadInputTokens)}/{fmtTokens(c.cacheCreationInputTokens)}
+                    </td>
                     <td className="mono">{c.toolCallCount}</td>
                     <td>
                       {c.error ? (
@@ -161,7 +203,7 @@ export function RunDetailPage() {
                   </tr>
                   {isOpen && (
                     <tr>
-                      <td colSpan={7}>
+                      <td colSpan={8}>
                         <details className="case-detail" open>
                           {c.error && (
                             <>

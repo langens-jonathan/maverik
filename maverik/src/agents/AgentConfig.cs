@@ -37,4 +37,15 @@ public sealed class AgentConfig
     public List<string> McpServers { get; set; } = new();
 
     public int MaxIterations { get; set; } = 8;
+
+    // Opt-in Anthropic prompt-prefix caching (see AnthropicCacheControl). Per-agent rather than
+    // per-model: whether caching pays off depends on THIS agent's prompt size and tool-catalog
+    // stability — a short system prompt can sit below the provider's minimum cacheable prefix and
+    // would only pay the write premium for zero reads, while a large tool catalog is the natural
+    // fit. Ignored (no-op) for non-Anthropic models.
+    public bool PromptCaching { get; set; } = false;
+
+    // "5m" (default TTL if PromptCaching is on and this is null) or "1h". See
+    // AnthropicCacheControl.ParseTtl.
+    public string? PromptCachingTtl { get; set; }
 }

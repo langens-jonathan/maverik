@@ -24,6 +24,7 @@ public sealed class MaverikRunner(
     LoopStrategyRegistry loops,
     McpServerRegistry mcp,
     ToolCostRegistry toolCosts,
+    CapabilityOverrideRegistry capabilityOverrides,
     CriterionEvaluator evaluator,
     MaverikResultsWriter writer,
     ILogger<MaverikRunner> log) : BackgroundService
@@ -65,6 +66,8 @@ public sealed class MaverikRunner(
         log.LogInformation("Run '{RunId}' started: suite '{Suite}', {Agents} agent(s), {Questions} question(s), {Reps} repetition(s).",
             request.RunId, suite.Id, request.AgentIds.Count, suite.Questions.Count, request.Repetitions);
 
+        var bundles = new Dictionary<string, CapabilityBundle>();
+
         foreach (var agentId in request.AgentIds)
         {
             // Resolve everything the agent's cases share once. A bad agent/model/loop id
@@ -75,11 +78,28 @@ public sealed class MaverikRunner(
             var strategy = loops.Resolve(agent.LoopType);
             var tools = mcp.ToolsForServers(agent.McpServers);
 
+            // Capture the effective (post-override) catalog snapshot before running any case —
+            // see CapabilityBundle. Published incrementally so it's visible mid-run, same as
+            // CompletedCases/Results below.
+            var orderedTools = mcp.ToolsForServersWithOwner(agent.McpServers);
+            var overridesForAgent = capabilityOverrides.OverridesFor(agent.Id);
+            bundles[agentId] = CapabilityBundleBuilder.Build(
+                agent.Id, orderedTools.Select(t => (t.Server, (AIFunction)t.Tool)).ToList(), overridesForAgent);
+            status = status with { CapabilityBundles = bundles };
+            store.Set(status);
+
+            // Only built when this agent actually has an override — the common case (no
+            // overrides) sends Tools as-is, unchanged from before this feature existed.
+            IReadOnlyList<AITool>? presentationTools = overridesForAgent.Count > 0
+                ? CapabilityOverrideApplier.Apply(
+                    orderedTools.Select(t => (t.Server, (AIFunction)t.Tool)).ToList(), overridesForAgent)
+                : null;
+
             foreach (var question in suite.Questions)
             {
                 for (var repetition = 1; repetition <= request.Repetitions; repetition++)
                 {
-                    var result = await RunCaseAsync(agent, chat, strategy, tools, suite, question, repetition, ct);
+                    var result = await RunCaseAsync(agent, chat, strategy, tools, presentationTools, suite, question, repetition, ct);
                     results.Add(result);
 
                     // Publish progress after every case so polls see the run advance.
@@ -106,20 +126,25 @@ public sealed class MaverikRunner(
     private async Task<QuestionRunResult> RunCaseAsync(
         AgentConfig agent, IChatClient chat, ILoopStrategy strategy,
         IReadOnlyList<ModelContextProtocol.Client.McpClientTool> tools,
+        IReadOnlyList<AITool>? presentationTools,
         MaverikSuite suite, MaverikQuestion question, int repetition, CancellationToken ct)
     {
         var sw = Stopwatch.StartNew();
         try
         {
             // Isolation is the point: every case starts from a clean two-message history.
+            // Cache control (see AnthropicCacheControl) is opt-in per agent — an agent that
+            // doesn't set PromptCaching gets the plain system message, unchanged.
             List<ChatMessage> history =
             [
-                new(ChatRole.System, agent.SystemPrompt!),
+                agent.PromptCaching
+                    ? AnthropicCacheControl.BuildSystemMessage(agent.SystemPrompt!, AnthropicCacheControl.ParseTtl(agent.PromptCachingTtl))
+                    : new(ChatRole.System, agent.SystemPrompt!),
                 new(ChatRole.User, question.Text),
             ];
 
             var turn = await strategy.RunTurnAsync(
-                new TurnRequest(chat, history, tools, agent.MaxIterations, Progress: null), ct);
+                new TurnRequest(chat, history, tools, agent.MaxIterations, Progress: null, presentationTools), ct);
             sw.Stop();
 
             // A turn that hit the iteration cap has no final answer — that's a fail on its
@@ -137,6 +162,8 @@ public sealed class MaverikRunner(
                 InputTokens = turn.InputTokens,
                 OutputTokens = turn.OutputTokens,
                 PeakContextTokens = turn.PeakContextTokens,
+                CacheReadInputTokens = turn.CacheReadInputTokens,
+                CacheCreationInputTokens = turn.CacheCreationInputTokens,
                 Iterations = turn.Iterations,
                 ToolCallCount = turn.ToolCallCount,
                 ToolNames = turn.ToolNames,

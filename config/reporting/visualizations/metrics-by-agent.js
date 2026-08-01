@@ -1,5 +1,6 @@
-// Table: all 9 outcome parameters, one row per agent — each cell averaged across that agent's
-// records in `data` (nullable metrics average only over the records that reported them).
+// Table: the 9 outcome parameters plus prompt-caching token averages, one row per agent — each
+// cell averaged across that agent's records in `data` (nullable metrics average only over the
+// records that reported them; cache columns are null for agents without prompt caching enabled).
 // See ../README.md for the function contract.
 export const layout = "full";
 export default function (container, data, { d3 }) {
@@ -29,6 +30,8 @@ export default function (container, data, { d3 }) {
       avgOutputTokens: avg(records.map((r) => r.summary.avgOutputTokens)),
       avgToolCalls: avg(records.map((r) => r.summary.avgToolCalls)),
       avgPeakContextTokens: avg(records.map((r) => r.summary.avgPeakContextTokens)),
+      avgCacheReadInputTokens: avg(records.map((r) => r.summary.avgCacheReadInputTokens)),
+      avgCacheCreationInputTokens: avg(records.map((r) => r.summary.avgCacheCreationInputTokens)),
       tokenCost: avg(records.map((r) => r.summary.estCostTotal)),
       toolCost: avg(records.map((r) => r.summary.estToolCostTotal)),
       overallCost: avg(records.map((r) => r.summary.estOverallCostTotal)),
@@ -51,6 +54,8 @@ export default function (container, data, { d3 }) {
     ["Avg output tokens", (r) => fmt.num(r.avgOutputTokens)],
     ["Avg tool calls", (r) => fmt.num1(r.avgToolCalls)],
     ["Avg peak context tokens", (r) => fmt.num(r.avgPeakContextTokens)],
+    ["Avg cache read tokens", (r) => fmt.num(r.avgCacheReadInputTokens)],
+    ["Avg cache creation tokens", (r) => fmt.num(r.avgCacheCreationInputTokens)],
     ["Token cost ($)", (r) => fmt.usd(r.tokenCost)],
     ["Tool cost ($)", (r) => fmt.usd(r.toolCost)],
     ["Overall cost ($)", (r) => fmt.usd(r.overallCost)],

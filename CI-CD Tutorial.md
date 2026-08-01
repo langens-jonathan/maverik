@@ -88,6 +88,10 @@ pipeline {
         MAVERIK_API               = 'http://maverik.internal:5088'
         SUITE_ID                  = 'inventory-smoke'
         COST_REGRESSION_THRESHOLD = '0.15'   // fail the build if cost jumps >15%
+        // Set to 'true' (e.g. via a build parameter) on the one commit that deliberately changes
+        // an agent's tool catalog — otherwise compare_runs.py treats any capability-digest change
+        // as a regression. Leave unset/false the rest of the time.
+        EXPECT_CAPABILITY_CHANGE  = 'false'
     }
 
     stages {
@@ -180,7 +184,7 @@ and post the comparison somewhere instead of just printing it.
 
 ```python
 #!/usr/bin/env python3
-import json, sys
+import json, os, sys
 
 records_path, threshold = sys.argv[1], float(sys.argv[2])
 records = json.load(open(records_path))
@@ -197,15 +201,28 @@ cost_increase = (
     if previous["estOverallCostTotal"] else 0
 )
 
+# Security-relevant, not just cost: did this agent's effective tool catalog change at all
+# (renamed/added/removed tool, changed description/schema, gained/lost an MCP server)? The
+# digest is computed from the exact tools/descriptions/schemas/order actually sent to the model —
+# see CapabilityBundle — so it changes on ANY of those, not just the ones that happen to move
+# cost or pass rate.
+digest_changed = current.get("capabilityDigest") != previous.get("capabilityDigest")
+
 print(f"pass rate: {previous['passRate']:.0%} -> {current['passRate']:.0%}")
 print(f"overall cost: ${previous['estOverallCostTotal']:.4f} -> ${current['estOverallCostTotal']:.4f} "
       f"({cost_increase:+.1%})")
+if digest_changed:
+    print(f"capability digest: {previous.get('capabilityDigest')} -> {current.get('capabilityDigest')}")
 
 if pass_rate_dropped:
     print("FAIL: pass rate dropped.")
     sys.exit(1)
 if cost_increase > threshold:
     print(f"FAIL: cost increased more than {threshold:.0%}.")
+    sys.exit(1)
+if digest_changed and os.environ.get("EXPECT_CAPABILITY_CHANGE") != "true":
+    print("FAIL: capability digest changed unexpectedly.")
+    print("  Re-run with EXPECT_CAPABILITY_CHANGE=true to acknowledge an intentional change.")
     sys.exit(1)
 
 print("OK: no regression.")
@@ -224,6 +241,11 @@ classes of change into a build failure instead of a support ticket three weeks l
   described above.
 - **A tool starts behaving differently** (different response shape, slower, flakier) — shows up
   as duration or iteration-count drift even when the final answer still happens to pass.
+- **An agent's effective tool set changes at all**, even in ways that don't move pass rate or
+  cost this run — a renamed field, a reordered catalog, a server the agent gained or lost access
+  to. The `capabilityDigest` check above catches this independently of the other two, which is
+  the point: cost and correctness can both look fine while an agent quietly gains reach it
+  shouldn't have.
 
 ## What's deliberately left out
 

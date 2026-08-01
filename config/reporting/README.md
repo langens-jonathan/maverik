@@ -98,3 +98,8 @@ Four more go beyond the 9-metric grid, using the per-question `results` data dir
 - `tool-call-frequency.js` — bar chart, call count per tool name, summed across every case.
 - `reliability-by-agent.js` — table of error rate and iteration-limit-hit rate per agent, the
   reliability signals a pass-rate number alone doesn't explain.
+
+Two more cover fields outside the original 9-parameter set: Anthropic prompt-caching token
+averages (`metrics-by-agent.js` gained two columns for these) and the per-agent tool-catalog
+digest/tool-count (`capability-by-agent.js`, new) — both null/absent for agents that don't have
+`promptCaching` enabled.

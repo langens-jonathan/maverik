@@ -84,7 +84,7 @@ public sealed class MaverikResultsWriter(string contentRootPath, ILogger<Maverik
     internal static string ToCsv(IReadOnlyList<QuestionRunResult> results)
     {
         var sb = new StringBuilder();
-        sb.AppendLine("agentId,questionId,repetition,durationMs,inputTokens,outputTokens,peakContextTokens,iterations,toolCalls,passed,error");
+        sb.AppendLine("agentId,questionId,repetition,durationMs,inputTokens,outputTokens,peakContextTokens,cacheReadInputTokens,cacheCreationInputTokens,iterations,toolCalls,passed,error");
         foreach (var r in results)
         {
             sb.AppendLine(string.Join(',',
@@ -95,6 +95,8 @@ public sealed class MaverikResultsWriter(string contentRootPath, ILogger<Maverik
                 r.InputTokens,          // null renders as empty — "unknown", not 0
                 r.OutputTokens,
                 r.PeakContextTokens,
+                r.CacheReadInputTokens,
+                r.CacheCreationInputTokens,
                 r.Iterations,
                 r.ToolCallCount,
                 r.Passed,

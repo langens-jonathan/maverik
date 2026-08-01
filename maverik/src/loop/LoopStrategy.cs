@@ -1,4 +1,5 @@
 using System.Text.Json;
+using McpHost.LlmModel;
 using Microsoft.Extensions.AI;
 using ModelContextProtocol.Client;
 
@@ -12,9 +13,15 @@ namespace McpHost.Loop;
 public sealed record TurnRequest(
     IChatClient Chat,
     List<ChatMessage> History,          // already holds system prompt + user message; the loop appends to it
-    IReadOnlyList<McpClientTool> Tools, // the agent's ALLOWED subset — names resolve against this list only
+    IReadOnlyList<McpClientTool> Tools, // the agent's ALLOWED subset — names resolve against this list only; ALWAYS what InvokeToolAsync dispatches against
     int MaxIterations,
-    IProgress<string>? Progress);       // chat passes outbox lines; the benchmark runner passes null
+    IProgress<string>? Progress,        // chat passes outbox lines; the benchmark runner passes null
+    // What actually gets sent to the model, when it needs to differ from Tools — e.g. a
+    // capability-override experiment that edits a tool's description or a cache-control
+    // breakpoint on the last tool. Null (the default) means "send Tools as-is", so every
+    // existing call site is unaffected. Never used for dispatch — see InvokeToolAsync — because
+    // an overridden entry is a wire-only wrapper with no InvokeAsync.
+    IReadOnlyList<AITool>? PresentationTools = null);
 
 // What a turn produced, plus the metrics MAVERIK records per case.
 public sealed record TurnResult(
@@ -25,7 +32,9 @@ public sealed record TurnResult(
     long? InputTokens,                  // null = no response this turn reported usage (distinct from 0)
     long? OutputTokens,
     bool HitIterationLimit,
-    long? PeakContextTokens);           // largest single round-trip's (input+output), not summed — see RunTurnAsync
+    long? PeakContextTokens,            // largest single round-trip's (input+output), not summed — see RunTurnAsync
+    long? CacheReadInputTokens = null,      // Anthropic prompt-caching: tokens served from cache (already counted within InputTokens)
+    long? CacheCreationInputTokens = null); // Anthropic prompt-caching: tokens spent writing a new cache entry (NOT counted within InputTokens)
 
 public interface ILoopStrategy
 {
@@ -62,9 +71,11 @@ public abstract class LoopStrategyBase : ILoopStrategy
     public async Task<TurnResult> RunTurnAsync(TurnRequest request, CancellationToken ct)
     {
         // McpClientTool : AIFunction, so the agent's subset goes straight into ChatOptions.
-        var options = new ChatOptions { Tools = [.. request.Tools] };
+        // PresentationTools (when set) overrides what's actually sent — see TurnRequest.
+        var options = new ChatOptions { Tools = [.. (IEnumerable<AITool>?)request.PresentationTools ?? request.Tools] };
 
         long? inputTokens = null, outputTokens = null, peakContextTokens = null;
+        long? cacheReadTokens = null, cacheCreationTokens = null;
         var toolNames = new List<string>();
 
         for (var iteration = 1; iteration <= request.MaxIterations; iteration++)
@@ -76,6 +87,15 @@ public abstract class LoopStrategyBase : ILoopStrategy
             // never 0.
             Accumulate(response.Usage?.InputTokenCount, ref inputTokens);
             Accumulate(response.Usage?.OutputTokenCount, ref outputTokens);
+
+            // Anthropic prompt-caching (see AnthropicCacheControl) — no-op (both stay null) for
+            // agents that don't opt in, since nothing ever sets a cache breakpoint for them.
+            // CachedInputTokenCount is already counted within InputTokenCount (don't double-price
+            // it); AdditionalCounts is the general provider-specific-count extensibility point.
+            Accumulate(response.Usage?.CachedInputTokenCount, ref cacheReadTokens);
+            Accumulate(
+                response.Usage?.AdditionalCounts?.GetValueOrDefault(AnthropicCacheControl.CacheCreationInputTokensKey),
+                ref cacheCreationTokens);
 
             // Unlike the totals above, this is NOT accumulated — it's the size of the single
             // largest round-trip (this call's own input+output), which is what actually matters
@@ -100,7 +120,8 @@ public abstract class LoopStrategyBase : ILoopStrategy
 
             if (calls.Count == 0)
                 return new TurnResult(response.Text, iteration, toolNames.Count, toolNames,
-                                      inputTokens, outputTokens, HitIterationLimit: false, peakContextTokens);
+                                      inputTokens, outputTokens, HitIterationLimit: false, peakContextTokens,
+                                      cacheReadTokens, cacheCreationTokens);
 
             toolNames.AddRange(calls.Select(c => c.Name));
 
@@ -112,7 +133,8 @@ public abstract class LoopStrategyBase : ILoopStrategy
         }
 
         return new TurnResult("", request.MaxIterations, toolNames.Count, toolNames,
-                              inputTokens, outputTokens, HitIterationLimit: true, peakContextTokens);
+                              inputTokens, outputTokens, HitIterationLimit: true, peakContextTokens,
+                              cacheReadTokens, cacheCreationTokens);
     }
 
     // Dispatch one call to the owning MCP client. Names resolve against the agent's allowed
