@@ -69,6 +69,16 @@ public sealed record QuestionRunResult
     public long? JudgeInputTokens { get; init; }
     public long? JudgeOutputTokens { get; init; }
 
+    // Per-case cost estimates — same math MaverikSummaryBuilder already used for the per-agent
+    // aggregate (EstimateCost/EstimateToolCost, MaverikSummary.cs), just evaluated once per case
+    // instead of averaged/summed across a whole agent's cases. Null under the same conventions as
+    // the aggregate: EstCost is null when the model has no configured pricing or this case has no
+    // token usage; EstToolCost is 0 (not null) whenever the case evaluated at all, even with zero
+    // tool calls. Added so per-question reporting (the Compare Versions regression matrix and
+    // distribution strips) can show real cost instead of only tokens.
+    public decimal? EstCost { get; init; }
+    public decimal? EstToolCost { get; init; }
+
     // Set when the case blew up (LLM error, evaluator error, ...). An errored case is not
     // counted as evaluated; the run continues past it.
     public string? Error { get; init; }

@@ -11,6 +11,7 @@ import renderToolUsageFlow, { TITLE as TOOL_FLOW_TITLE } from "../charts/toolUsa
 const renderDurationStrip = makeDistributionStrip("durationMs");
 const renderInputTokensStrip = makeDistributionStrip("inputTokens");
 const renderOutputTokensStrip = makeDistributionStrip("outputTokens");
+const renderCostStrip = makeDistributionStrip("cost");
 
 function pointLabel(version) {
   return version == null ? "Current" : `v${version}`;
@@ -253,7 +254,7 @@ export function CompareVersionsPage() {
       {chartData && (
         <ChartCard
           title={renderDurationStrip.TITLE}
-          subtitle="Every repetition's wall-clock duration, honest at any n — a cost strip joins these once per-case cost is recorded."
+          subtitle="Every repetition's wall-clock duration, honest at any n."
           filename={`duration-strip-${agentId}`}
           data={chartData}
           render={renderDurationStrip}
@@ -277,6 +278,16 @@ export function CompareVersionsPage() {
           filename={`output-tokens-strip-${agentId}`}
           data={chartData}
           render={renderOutputTokensStrip}
+        />
+      )}
+
+      {chartData && (
+        <ChartCard
+          title={renderCostStrip.TITLE}
+          subtitle="Per-repetition cost (token + tool), same spread-not-average honesty as the other strips."
+          filename={`cost-strip-${agentId}`}
+          data={chartData}
+          render={renderCostStrip}
         />
       )}
 

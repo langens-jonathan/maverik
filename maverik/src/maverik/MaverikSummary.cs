@@ -105,29 +105,11 @@ public static class MaverikSummaryBuilder
         decimal? estCostPerQuestion = null;
         decimal? estCostTotal = null;
         var pricing = models.ResolveConfig(agent.Model);
-        if (pricing is { InputPricePerMTok: not null, OutputPricePerMTok: not null } && withUsage.Count > 0)
+        var costs = withUsage
+            .Select(c => EstimateCost(c.InputTokens, c.OutputTokens, c.CacheReadInputTokens, c.CacheCreationInputTokens, pricing))
+            .Where(v => v is not null).Select(v => v!.Value).ToList();
+        if (costs.Count > 0)
         {
-            // Always prices cache writes at the 5m multiplier, regardless of which TTL the agent
-            // actually configured (QuestionRunResult doesn't record per-case TTL) — a known,
-            // documented simplification; a 1h-cached agent's write cost will read slightly low.
-            var cacheMultipliers = pricing is
-            {
-                CacheReadMultiplier: { } readMul,
-                CacheWriteMultiplier: { } writeMul
-            }
-                ? (ReadMultiplier: readMul, CreationMultiplier: writeMul)
-                : ((decimal ReadMultiplier, decimal CreationMultiplier)?)null;
-
-            var costs = withUsage
-                .Select(c => cacheMultipliers is not null
-                    ? CacheAwareTokenCost(
-                        c.InputTokens!.Value, c.OutputTokens!.Value,
-                        c.CacheReadInputTokens ?? 0, c.CacheCreationInputTokens ?? 0,
-                        pricing.InputPricePerMTok!.Value, pricing.OutputPricePerMTok!.Value,
-                        cacheMultipliers.Value.ReadMultiplier, cacheMultipliers.Value.CreationMultiplier)
-                    : TokenCost(c.InputTokens!.Value, c.OutputTokens!.Value,
-                        pricing.InputPricePerMTok!.Value, pricing.OutputPricePerMTok!.Value))
-                .ToList();
             estCostPerQuestion = costs.Average();
             estCostTotal = costs.Sum();
         }
@@ -135,21 +117,13 @@ public static class MaverikSummaryBuilder
         // Resolve each case's tool calls to their owning server SCOPED to this agent's allowed
         // servers (agent.McpServers) — the same scoping McpServerRegistry.ToolsForServers uses —
         // so a same-named tool on a server this agent doesn't use can't be mis-attributed.
-        var toolServerByName = agent.McpServers
-            .SelectMany(server => mcp.ToolsByServer.TryGetValue(server, out var tools)
-                ? tools.Select(t => (Server: server, t.Name))
-                : [])
-            .GroupBy(t => t.Name)
-            .ToDictionary(g => g.Key, g => g.First().Server);
+        var toolServerByName = BuildToolServerByName(agent, mcp);
 
         decimal? estToolCostPerQuestion = null;
         decimal? estToolCostTotal = null;
         if (evaluated.Count > 0)
         {
-            var toolCostsPerCase = evaluated
-                .Select(c => c.ToolNames.Sum(name =>
-                    toolServerByName.TryGetValue(name, out var server) ? toolCosts.CostOf(server, name) : 0m))
-                .ToList();
+            var toolCostsPerCase = evaluated.Select(c => EstimateToolCost(c.ToolNames, toolServerByName, toolCosts)).ToList();
             estToolCostPerQuestion = toolCostsPerCase.Average();
             estToolCostTotal = toolCostsPerCase.Sum();
         }
@@ -182,6 +156,46 @@ public static class MaverikSummaryBuilder
 
         return new JudgeOverheadSummary(inputTokens, outputTokens, estCost);
     }
+
+    // Per-case cost, given raw usage values rather than a QuestionRunResult — lets MaverikRunner
+    // call this right after a turn completes (before a QuestionRunResult even exists) with the
+    // exact same math BuildAgentSummary uses for its per-agent aggregate above. Null under the
+    // same conventions as the aggregate: no configured pricing, or this case reported no usage.
+    internal static decimal? EstimateCost(
+        long? inputTokens, long? outputTokens, long? cacheReadTokens, long? cacheCreationTokens, LLMModelConfig? pricing)
+    {
+        if (pricing is not { InputPricePerMTok: not null, OutputPricePerMTok: not null }) return null;
+        if (inputTokens is null || outputTokens is null) return null;
+
+        // Always prices cache writes at the 5m multiplier, regardless of which TTL the agent
+        // actually configured (QuestionRunResult doesn't record per-case TTL) — a known,
+        // documented simplification; a 1h-cached agent's write cost will read slightly low.
+        return pricing is { CacheReadMultiplier: { } readMul, CacheWriteMultiplier: { } writeMul }
+            ? CacheAwareTokenCost(
+                inputTokens.Value, outputTokens.Value, cacheReadTokens ?? 0, cacheCreationTokens ?? 0,
+                pricing.InputPricePerMTok!.Value, pricing.OutputPricePerMTok!.Value, readMul, writeMul)
+            : TokenCost(inputTokens.Value, outputTokens.Value, pricing.InputPricePerMTok!.Value, pricing.OutputPricePerMTok!.Value);
+    }
+
+    // Sum of one case's tool calls, each priced by ToolCostRegistry.CostOf scoped through
+    // toolServerByName (see BuildToolServerByName) — 0, not null, whenever the case evaluated at
+    // all, even with zero tool calls or none of them priced. Takes the raw name list rather than
+    // a QuestionRunResult for the same reason EstimateCost takes raw values — MaverikRunner needs
+    // to call this from a TurnResult, before a QuestionRunResult exists.
+    internal static decimal EstimateToolCost(
+        IReadOnlyList<string> toolNames, IReadOnlyDictionary<string, string> toolServerByName, ToolCostRegistry toolCosts) =>
+        toolNames.Sum(name => toolServerByName.TryGetValue(name, out var server) ? toolCosts.CostOf(server, name) : 0m);
+
+    // Resolves each of an agent's reachable tools to its owning server SCOPED to that agent's
+    // allowed servers (agent.McpServers) — the same scoping McpServerRegistry.ToolsForServers
+    // uses — so a same-named tool on a server this agent doesn't use can't be mis-attributed.
+    internal static IReadOnlyDictionary<string, string> BuildToolServerByName(AgentConfig agent, McpServerRegistry mcp) =>
+        agent.McpServers
+            .SelectMany(server => mcp.ToolsByServer.TryGetValue(server, out var tools)
+                ? tools.Select(t => (Server: server, t.Name))
+                : [])
+            .GroupBy(t => t.Name)
+            .ToDictionary(g => g.Key, g => g.First().Server);
 
     internal static decimal TokenCost(long inputTokens, long outputTokens, decimal inputPricePerMTok, decimal outputPricePerMTok) =>
         inputTokens / 1_000_000m * inputPricePerMTok + outputTokens / 1_000_000m * outputPricePerMTok;

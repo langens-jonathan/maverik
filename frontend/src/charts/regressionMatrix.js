@@ -3,11 +3,11 @@
 // Three interactive modes, all handled as internal chart state (same pattern
 // cost-vs-correctness.js already established for its legend collapse/deselect — a local redraw()
 // closure, not a React re-render) so toggling doesn't require new data from the page:
-//   - Annotation: fraction (always shown) plus an optional tokens line.
+//   - Annotation: fraction (always shown) plus an optional tokens or cost line. Cost reads
+//     QuestionRunResult.EstCost/EstToolCost (Phase 0 gap report, TODO A — now recorded per-case).
 //   - Diff vs. baseline: recolors candidate cells by CHANGE from baseline instead of absolute
 //     pass rate — unchanged cells recede, regressions (red) and fixes (green) are what's left to
-//     look at. Cost annotation isn't offered yet — no per-case cost exists (Phase 0 gap report,
-//     TODO A) — the button is present but disabled, not silently missing, so the gap stays visible.
+//     look at.
 //   - Sort: regressions-first, by how much each row's candidates fell vs. baseline.
 //
 // Contract: render(container, data, theme) where data = { baseline, candidates }.
@@ -42,6 +42,7 @@ function cellFor(point, questionId) {
     n: evaluated.length,
     errors: cases.length - evaluated.length,
     tokens: avg(evaluated.map((c) => (c.inputTokens != null && c.outputTokens != null ? c.inputTokens + c.outputTokens : null))),
+    cost: avg(evaluated.map((c) => (c.estCost == null && c.estToolCost == null ? null : (c.estCost ?? 0) + (c.estToolCost ?? 0)))),
   };
 }
 
@@ -77,40 +78,46 @@ export default function render(container, data, theme) {
   const controls = d3.select(container).append("div")
     .style("display", "flex").style("gap", "0.5rem").style("margin-bottom", "0.6rem").style("flex-wrap", "wrap");
 
+  // Every toggle button's active/inactive style is re-applied from `state` after any click (not
+  // just the clicked button's own) — several buttons here are part of the same mutually-exclusive
+  // group (annotation: fraction/tokens/cost), so clicking one has to visually deactivate another.
+  const buttons = [];
   function toggleButton(label, isActive, onClick, opts = {}) {
     const btn = controls.append("button")
       .attr("type", "button")
       .style("font", "inherit").style("font-family", theme.fontSans).style("font-size", "0.72rem")
       .style("padding", "0.25rem 0.6rem").style("border-radius", theme.radius || "5px")
       .style("cursor", opts.disabled ? "not-allowed" : "pointer")
-      .style("border", `1px solid ${isActive() ? theme.accent : theme.border}`)
-      .style("background", isActive() ? theme.accentWash : "transparent")
-      .style("color", opts.disabled ? theme.muted : isActive() ? theme.accentStrong : theme.text)
-      .style("opacity", opts.disabled ? 0.5 : 1)
       .attr("title", opts.title ?? null)
       .text(label);
-    if (!opts.disabled) {
-      btn.on("click", () => {
-        onClick();
-        btn.style("border-color", isActive() ? theme.accent : theme.border)
-          .style("background", isActive() ? theme.accentWash : "transparent")
-          .style("color", isActive() ? theme.accentStrong : theme.text);
-        redraw();
-      });
-    }
+    if (!opts.disabled) btn.on("click", () => { onClick(); refreshButtons(); redraw(); });
+    buttons.push({ btn, isActive, disabled: !!opts.disabled });
     return btn;
+  }
+  function refreshButtons() {
+    for (const { btn, isActive, disabled } of buttons) {
+      const active = !disabled && isActive();
+      btn.style("border", `1px solid ${active ? theme.accent : theme.border}`)
+        .style("background", active ? theme.accentWash : "transparent")
+        .style("color", disabled ? theme.muted : active ? theme.accentStrong : theme.text)
+        .style("opacity", disabled ? 0.5 : 1);
+    }
   }
 
   toggleButton("Tokens", () => state.annotation === "tokens", () => {
     state.annotation = state.annotation === "tokens" ? "fraction" : "tokens";
   });
-  toggleButton("Cost", () => false, () => {}, { disabled: true, title: "Needs per-case cost — not recorded yet (see Phase 0 gap report, TODO A)" });
+  toggleButton("Cost", () => state.annotation === "cost", () => {
+    state.annotation = state.annotation === "cost" ? "fraction" : "cost";
+  });
   toggleButton("Diff vs. baseline", () => state.diffMode, () => {
     state.diffMode = !state.diffMode;
   });
   toggleButton("Regressions first", () => state.sortRegressions, () => {
     state.sortRegressions = !state.sortRegressions;
   }, { disabled: candidates.length === 0, title: candidates.length === 0 ? "Needs at least one candidate" : undefined });
+
+  refreshButtons();
 
   const svgHost = d3.select(container).append("div");
 
@@ -222,9 +229,10 @@ export default function render(container, data, theme) {
           ? `${delta < 0 ? "▼" : "▲"} ${cell.passed}/${cell.n}`
           : `${cell.passed}/${cell.n}`;
         const textColor = textColorFor(fill);
+        const hasSecondaryLine = state.annotation !== "fraction";
 
         cellG.append("text")
-          .attr("x", (colW - cellPad * 2) / 2).attr("y", (rowH - cellPad * 2) / 2 - (state.annotation === "tokens" ? 3 : -4))
+          .attr("x", (colW - cellPad * 2) / 2).attr("y", (rowH - cellPad * 2) / 2 - (hasSecondaryLine ? 3 : -4))
           .attr("text-anchor", "middle").attr("fill", textColor).attr("font-family", theme.fontMono)
           .attr("font-size", 11).attr("font-weight", 600)
           .text(primary);
@@ -235,6 +243,13 @@ export default function render(container, data, theme) {
             .attr("text-anchor", "middle").attr("fill", textColor).attr("font-family", theme.fontMono)
             .attr("font-size", 8.5).attr("opacity", 0.85)
             .text(`${Math.round(cell.tokens).toLocaleString()} tok`);
+        }
+        if (state.annotation === "cost" && cell.cost != null) {
+          cellG.append("text")
+            .attr("x", (colW - cellPad * 2) / 2).attr("y", (rowH - cellPad * 2) / 2 + 10)
+            .attr("text-anchor", "middle").attr("fill", textColor).attr("font-family", theme.fontMono)
+            .attr("font-size", 8.5).attr("opacity", 0.85)
+            .text(`$${cell.cost.toFixed(4)}`);
         }
 
         if (cell.errors > 0) {

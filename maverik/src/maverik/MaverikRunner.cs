@@ -81,6 +81,12 @@ public sealed class MaverikRunner(
             var strategy = loops.Resolve(agent.LoopType);
             var tools = mcp.ToolsForServers(agent.McpServers);
 
+            // Resolved once per agent selection (not per case) — the same per-case cost math
+            // MaverikSummaryBuilder's aggregate uses (EstimateCost/EstimateToolCost), so
+            // QuestionRunResult.EstCost/EstToolCost need only the inputs that vary per case.
+            var pricing = models.ResolveConfig(agent.Model);
+            var toolServerByName = MaverikSummaryBuilder.BuildToolServerByName(agent, mcp);
+
             // Capture the effective (post-override) catalog snapshot before running any case —
             // see CapabilityBundle. Published incrementally so it's visible mid-run, same as
             // CompletedCases/Results below. Keyed by the whole selection so two versions of the
@@ -103,7 +109,7 @@ public sealed class MaverikRunner(
             {
                 for (var repetition = 1; repetition <= request.Repetitions; repetition++)
                 {
-                    var result = await RunCaseAsync(agent, selection.Version, chat, strategy, tools, presentationTools, suite, question, repetition, ct);
+                    var result = await RunCaseAsync(agent, selection.Version, chat, strategy, tools, presentationTools, pricing, toolServerByName, suite, question, repetition, ct);
                     results.Add(result);
 
                     // Publish progress after every case so polls see the run advance.
@@ -131,6 +137,7 @@ public sealed class MaverikRunner(
         AgentConfig agent, int? version, IChatClient chat, ILoopStrategy strategy,
         IReadOnlyList<ModelContextProtocol.Client.McpClientTool> tools,
         IReadOnlyList<AITool>? presentationTools,
+        LLMModelConfig? pricing, IReadOnlyDictionary<string, string> toolServerByName,
         MaverikSuite suite, MaverikQuestion question, int repetition, CancellationToken ct)
     {
         var sw = Stopwatch.StartNew();
@@ -178,6 +185,9 @@ public sealed class MaverikRunner(
                 EvaluationDetail = evaluation.Detail,
                 JudgeInputTokens = evaluation.JudgeInputTokens,
                 JudgeOutputTokens = evaluation.JudgeOutputTokens,
+                EstCost = MaverikSummaryBuilder.EstimateCost(
+                    turn.InputTokens, turn.OutputTokens, turn.CacheReadInputTokens, turn.CacheCreationInputTokens, pricing),
+                EstToolCost = MaverikSummaryBuilder.EstimateToolCost(turn.ToolNames, toolServerByName, toolCosts),
             };
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
