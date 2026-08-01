@@ -1,11 +1,14 @@
-import { Fragment, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { api } from "../api.js";
 import { usePolling } from "../hooks/usePolling.js";
 import { BarRow } from "../components/BarRow.jsx";
 import { NotFound } from "../components/NotFound.jsx";
-
-const AGENT_COLORS = ["#1a56db", "#057a55", "#9333ea", "#c2410c", "#0e7490", "#be123c"];
+import { ChartCard } from "../components/ChartCard.jsx";
+import { colorForIndex } from "../charts/core/palette.js";
+import renderCriterionOutcomes, { TITLE as CRITERION_TITLE } from "../charts/criterionOutcomes.js";
+import renderToolUsageProfile, { TITLE as TOOL_PROFILE_TITLE } from "../charts/toolUsageProfile.js";
+import renderCostSplit, { TITLE as COST_SPLIT_TITLE } from "../charts/costSplit.js";
 
 function fmtMs(ms) {
   if (ms == null) return "—";
@@ -40,6 +43,42 @@ export function RunDetailPage() {
     active || !!run
   );
   const [expanded, setExpanded] = useState(null);
+  const [suite, setSuite] = useState(null);
+
+  useEffect(() => {
+    if (!run?.suiteId) return;
+    setSuite(null);
+    api.getSuite(run.suiteId).then(setSuite).catch(() => setSuite(null));
+  }, [run?.suiteId]);
+
+  // criteriaByQuestionId: only used by the per-criterion-outcomes chart — a suite that failed to
+  // load (deleted since the run, or still loading) just means that one chart falls back to an
+  // "unknown" bucket rather than breaking the whole page.
+  const criteriaByQuestionId = useMemo(() => {
+    if (!suite) return {};
+    return Object.fromEntries(suite.questions.map((q) => [q.id, q.criterion.type]));
+  }, [suite]);
+
+  // One entry per agent in the Comparison card, each carrying its own slice of run.results —
+  // the shared shape charts/criterionOutcomes.js and charts/toolUsageProfile.js both consume.
+  // Every agent is a peer here (unlike Compare Versions' baseline/candidates), so color is plain
+  // position-based colorForIndex, matching the Comparison card's own BarRow coloring above.
+  const chartAgents = useMemo(() => {
+    if (!summary || !run) return [];
+    return summary.agents.map((a, i) => ({
+      label: `${a.agentId}${a.version != null ? ` (v${a.version})` : ""}`,
+      color: colorForIndex(i),
+      results: run.results.filter((r) => r.agentId === a.agentId && r.version === a.version),
+    }));
+  }, [summary, run]);
+
+  const costSplitData = useMemo(() => {
+    if (!summary) return null;
+    return {
+      agentCost: summary.agents.reduce((sum, a) => sum + (a.estCostTotal ?? 0), 0),
+      judgeCost: summary.judgeOverhead?.estCost ?? null,
+    };
+  }, [summary]);
 
   if (runError?.status === 404) return <NotFound message={`No run '${runId}'.`} />;
   if (runError) return <p className="error-text">Failed to load run: {runError.message}</p>;
@@ -80,7 +119,7 @@ export function RunDetailPage() {
         <div className="card">
           <h3>Comparison</h3>
           {summary.agents.map((a, i) => {
-            const color = AGENT_COLORS[i % AGENT_COLORS.length];
+            const color = colorForIndex(i);
             return (
               <div className="agent-block" key={`${a.agentId}:${a.version ?? "live"}`}>
                 <h4>
@@ -159,6 +198,36 @@ export function RunDetailPage() {
             </p>
           )}
         </div>
+      )}
+
+      {chartAgents.length > 0 && (
+        <ChartCard
+          title={CRITERION_TITLE}
+          subtitle="Which kind of check this run's failures cluster on."
+          filename={`criterion-outcomes-${run.runId}`}
+          data={{ agents: chartAgents, criteriaByQuestionId }}
+          render={renderCriterionOutcomes}
+        />
+      )}
+
+      {chartAgents.length > 0 && (
+        <ChartCard
+          title={TOOL_PROFILE_TITLE}
+          subtitle="Which tools this run actually reached for."
+          filename={`tool-usage-profile-${run.runId}`}
+          data={{ agents: chartAgents }}
+          render={renderToolUsageProfile}
+        />
+      )}
+
+      {costSplitData && (
+        <ChartCard
+          title={COST_SPLIT_TITLE}
+          subtitle="Evaluation overhead vs. agent work, split out of one combined total."
+          filename={`cost-split-${run.runId}`}
+          data={costSplitData}
+          render={renderCostSplit}
+        />
       )}
 
       <div className="card">

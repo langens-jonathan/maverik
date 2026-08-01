@@ -13,13 +13,20 @@ Visualizations tab, it shows up.
 Every file's default export is a function with this exact signature:
 
 ```js
-export default function(container, data, { d3, fullWidth, halfWidth }) {
+export default function(container, data, { d3, fullWidth, halfWidth, chartKit }) {
   // container: an empty <div> the host created for this visualization. Render into it.
   // data: an array of SuiteRunRecord objects (see results/suite-runs/*.json for the shape).
   // { d3 }: libraries the host injects. Don't `import` anything yourself.
   // fullWidth/halfWidth: pixel budgets for a "full row" vs. "half row" slot in whatever layout
   // is hosting this visualization (see "Sizing & layout" below). Not every host passes real
   // values — treat both as optional and fall back to a sane hardcoded width if undefined.
+  // chartKit: the pure, MAVERIK-agnostic half of frontend/src/charts/core/ — createChartSvg,
+  // createTooltip, renderLegend (+ estimateLegendRows), drawHorizontalGridlines/
+  // drawVerticalGridlines/styleAxis, placeLabels, beeswarm, showEmptyState, readTheme,
+  // CATEGORICAL/colorForIndex, barPath. This is how the app's shared chart toolkit
+  // (docs/chart-design-system.md) applies here despite the no-import rule below — reach for it
+  // instead of hand-rolling gridline/tooltip/legend chrome inline. See
+  // cost-per-question-distribution.js or iteration-budget-utilization.js for worked examples.
 }
 ```
 

@@ -7,9 +7,14 @@
 // Contract: render(container, data, theme) where data = { baseline, candidates, suiteLabel }.
 // `baseline`/each entry of `candidates` is { label, color, summary: AgentSummary, results:
 // QuestionRunResult[] }. `candidates` may be empty — see the single-version branch below.
+//
+// Built on the shared chart toolkit — see docs/chart-design-system.md.
 import * as d3 from "d3";
-import { baselineColor } from "./palette.js";
-import { METRICS, computeDelta, spread } from "./metrics.js";
+import { baselineColor } from "./comparison/palette.js";
+import { METRICS, computeDelta, spread } from "./comparison/metrics.js";
+import { createChartSvg } from "./core/svgFrame.js";
+import { renderLegend } from "./core/legend.js";
+import { showEmptyState } from "./core/emptyState.js";
 
 export const TITLE = "Delta vs. baseline";
 
@@ -17,13 +22,11 @@ export default function render(container, data, theme) {
   const { baseline, candidates } = data;
 
   if (!baseline) {
-    container.textContent = "Pick a baseline version above to see its metrics.";
+    showEmptyState(container, "Pick a baseline version above to see its metrics.");
     return;
   }
 
-  const width = Math.max(container.clientWidth || 0, 640);
   const panelGap = 14;
-  const panelWidth = (width - panelGap * (METRICS.length - 1)) / METRICS.length;
   const rowHeight = 30;
   const headerH = 56; // title + subtitle
   const panelTop = headerH + 14;
@@ -33,24 +36,13 @@ export default function render(container, data, theme) {
   const legendH = 30;
   const height = panelTop + panelH + legendH + 16;
 
-  const svg = d3.select(container).append("svg")
-    .attr("width", width).attr("height", height)
-    .attr("viewBox", `0 0 ${width} ${height}`);
+  const subtitle = candidates.length === 0
+    ? `Baseline: ${baseline.label} — absolute values (pick a candidate to compare)`
+    : `Baseline: ${baseline.label} vs. ${candidates.length} candidate${candidates.length === 1 ? "" : "s"}`;
 
-  // Title + subtitle, baked into the SVG so an exported image is self-explanatory alone.
-  svg.append("text")
-    .attr("x", 0).attr("y", 20)
-    .attr("fill", theme.textStrong).attr("font-family", theme.fontDisplay || theme.fontSans)
-    .attr("font-size", 15).attr("font-weight", 600)
-    .text(TITLE);
-  svg.append("text")
-    .attr("x", 0).attr("y", 40)
-    .attr("fill", theme.muted).attr("font-family", theme.fontMono).attr("font-size", 11)
-    .text(
-      candidates.length === 0
-        ? `Baseline: ${baseline.label} — absolute values (pick a candidate to compare)`
-        : `Baseline: ${baseline.label} vs. ${candidates.length} candidate${candidates.length === 1 ? "" : "s"}`
-    );
+  const { svg, width } = createChartSvg(container, { minWidth: 640, height, title: TITLE, subtitle, subtitleY: 40 }, theme);
+
+  const panelWidth = (width - panelGap * (METRICS.length - 1)) / METRICS.length;
 
   METRICS.forEach((metric, i) => {
     const panel = svg.append("g").attr("transform", `translate(${i * (panelWidth + panelGap)},${panelTop})`);
@@ -81,7 +73,7 @@ export default function render(container, data, theme) {
       const row = panel.append("g").attr("transform", `translate(10,${y})`);
 
       // Identity marker — square for the baseline, circle for a candidate (shape, not just
-      // color, carries identity — see engineering constraints).
+      // color, carries identity — see docs/chart-design-system.md).
       if (markerShape === "square") {
         row.append("rect").attr("x", 0).attr("y", -5).attr("width", 8).attr("height", 8).attr("fill", color);
       } else {
@@ -138,20 +130,13 @@ export default function render(container, data, theme) {
     });
   });
 
-  // Legend — baseline square + every candidate's circle/label, the same shapes/colors used in
-  // every row above, so this reads correctly even cropped out of the rest of the page.
-  const legend = svg.append("g").attr("transform", `translate(0,${panelTop + panelH + 20})`);
-  let lx = 0;
-  const legendItem = (shape, color, label) => {
-    const g = legend.append("g").attr("transform", `translate(${lx},0)`);
-    if (shape === "square") g.append("rect").attr("y", -8).attr("width", 8).attr("height", 8).attr("fill", color);
-    else g.append("circle").attr("cx", 4).attr("cy", -4).attr("r", 4).attr("fill", color);
-    const t = g.append("text")
-      .attr("x", 14).attr("y", -1)
-      .attr("fill", theme.muted).attr("font-family", theme.fontMono).attr("font-size", 11)
-      .text(label);
-    lx += 14 + (t.node()?.getComputedTextLength?.() ?? label.length * 6.5) + 20;
-  };
-  legendItem("square", baselineColor(theme), `Baseline · ${baseline.label}`);
-  candidates.forEach((c) => legendItem("circle", c.color, c.label));
+  renderLegend(
+    svg,
+    [
+      { shape: "square", color: baselineColor(theme), label: `Baseline · ${baseline.label}` },
+      ...candidates.map((c) => ({ shape: "circle", color: c.color, label: c.label })),
+    ],
+    theme,
+    { x: 0, y: panelTop + panelH + 20, fontSize: 11, gap: 20, widthMultiplier: 6.5 }
+  );
 }

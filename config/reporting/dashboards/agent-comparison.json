@@ -54,6 +54,10 @@
         {
           "ref": "agent-average-context-window",
           "title": "Avg peak context tokens by agent"
+        },
+        {
+          "ref": "iteration-budget-utilization",
+          "title": "Iteration-budget utilization by agent"
         }
       ]
     },
@@ -88,6 +92,10 @@
         {
           "ref": "tool-call-frequency",
           "title": "Tool call frequency"
+        },
+        {
+          "ref": "cost-per-question-distribution",
+          "title": "Per-case cost spread by agent"
         }
       ]
     }

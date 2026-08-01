@@ -1,5 +1,5 @@
-// Per-chart PNG/SVG export, shared by every chart module on the Compare Versions page (see
-// ChartCard.jsx, the one place these are called from). Every chart here renders one root <svg>
+// Per-chart PNG/SVG export — the generic mechanism every chart module's export button goes
+// through (see components/ChartCard.jsx, the one caller). Every chart renders one root <svg>
 // containing its own title/axis labels/legend, so exporting that node — verbatim for SVG, or
 // rasterized for PNG — is enough to make the image self-contained out of context.
 //
@@ -8,7 +8,7 @@
 // theme-live on screen) have to be baked into inline style/attribute values on a clone before
 // serializing. Walking getComputedStyle per node is the only reliable way to do that — there's no
 // API that resolves custom-property-driven attr()/style() values into a portable stylesheet.
-import { triggerDownload } from "../reportExport.js";
+import { triggerDownload } from "../../reportExport.js";
 
 const STYLE_PROPS = [
   "fill", "stroke", "stroke-width", "color", "font-family", "font-size", "font-weight",

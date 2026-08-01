@@ -1,6 +1,6 @@
 import { useEffect, useRef } from "react";
-import { exportSvgAsPng, exportSvgAsSvg } from "../charts/exportChart.js";
-import { readTheme } from "../charts/theme.js";
+import { exportSvgAsPng, exportSvgAsSvg } from "../charts/core/export.js";
+import { readTheme } from "../charts/core/theme.js";
 
 // The one host every Compare Versions chart mounts through — gives every chart module the same
 // three things (a container, its data, resolved theme tokens) and the same PNG/SVG export

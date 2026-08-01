@@ -8,8 +8,18 @@
 // same shape of chart) via makeDistributionStrip(metricKey) — a factory returning a bound
 // render(container, data, theme), so `data` stays the same { baseline, candidates } shape every
 // other Compare Versions chart uses.
+//
+// Built on the shared chart toolkit — see docs/chart-design-system.md. Keeps its dots directly
+// interactive at their visible 4.5px radius rather than adding paretoScatter.js's oversized hit
+// target — noted as a deliberate deferral (this refactor's acceptance test is zero visual/
+// behavioral regression), not an oversight.
 import * as d3 from "d3";
-import { baselineColor } from "./palette.js";
+import { baselineColor } from "./comparison/palette.js";
+import { createChartSvg } from "./core/svgFrame.js";
+import { drawVerticalGridlines, styleAxis } from "./core/axes.js";
+import { beeswarm } from "./core/beeswarm.js";
+import { createTooltip } from "./core/tooltip.js";
+import { showEmptyState } from "./core/emptyState.js";
 
 const METRIC_DEFS = {
   durationMs: {
@@ -34,20 +44,6 @@ const METRIC_DEFS = {
   },
 };
 
-// One-shot beeswarm via a d3-force simulation ticked to convergence synchronously (no animation
-// loop) — the standard technique for a static beeswarm, and needs no library beyond what the `d3`
-// package already bundles.
-function beeswarm(values, xScale, laneCenterY, radius) {
-  const nodes = values.map((v) => ({ value: v, x: xScale(v), y: laneCenterY }));
-  const sim = d3.forceSimulation(nodes)
-    .force("x", d3.forceX((d) => xScale(d.value)).strength(1))
-    .force("y", d3.forceY(laneCenterY).strength(0.15))
-    .force("collide", d3.forceCollide(radius + 1))
-    .stop();
-  for (let i = 0; i < 140; i++) sim.tick();
-  return nodes;
-}
-
 export function makeDistributionStrip(metricKey) {
   const def = METRIC_DEFS[metricKey];
   const TITLE = `${def.label} — per-repetition spread`;
@@ -55,7 +51,7 @@ export function makeDistributionStrip(metricKey) {
   function render(container, data, theme) {
     const { baseline, candidates } = data;
     if (!baseline) {
-      container.textContent = "Pick a baseline version above to see its spread.";
+      showEmptyState(container, "Pick a baseline version above to see its spread.");
       return;
     }
     const points = [{ ...baseline, isBaseline: true }, ...candidates.map((c) => ({ ...c, isBaseline: false }))];
@@ -67,30 +63,18 @@ export function makeDistributionStrip(metricKey) {
 
     const allValues = perPoint.flatMap((p) => p.values);
     if (allValues.length === 0) {
-      container.textContent = `No ${def.label.toLowerCase()} data for the selected versions.`;
+      showEmptyState(container, `No ${def.label.toLowerCase()} data for the selected versions.`);
       return;
     }
 
-    const width = Math.max(container.clientWidth || 0, 480);
     const labelColW = 130;
     const laneH = 40;
     const headerH = 56;
     const margin = { right: 20 };
     const height = headerH + points.length * laneH + 24;
+    const subtitle = "Every repetition as its own point — a tight cluster is consistency, a wide one is noise";
 
-    const svg = d3.select(container).append("svg")
-      .attr("width", width).attr("height", height)
-      .attr("viewBox", `0 0 ${width} ${height}`);
-
-    svg.append("text")
-      .attr("x", 0).attr("y", 20)
-      .attr("fill", theme.textStrong).attr("font-family", theme.fontDisplay || theme.fontSans)
-      .attr("font-size", 15).attr("font-weight", 600)
-      .text(TITLE);
-    svg.append("text")
-      .attr("x", 0).attr("y", 38)
-      .attr("fill", theme.muted).attr("font-family", theme.fontMono).attr("font-size", 11)
-      .text("Every repetition as its own point — a tight cluster is consistency, a wide one is noise");
+    const { svg, width } = createChartSvg(container, { minWidth: 480, height, title: TITLE, subtitle }, theme);
 
     const [vMin, vMax] = d3.extent(allValues);
     const pad = (vMax - vMin) * 0.08 || Math.max(1, vMax * 0.1);
@@ -99,22 +83,15 @@ export function makeDistributionStrip(metricKey) {
       .range([labelColW, width - margin.right])
       .nice();
 
-    svg.selectAll(".ds-grid").data(x.ticks(6)).join("line").attr("class", "ds-grid")
-      .attr("x1", (v) => x(v)).attr("x2", (v) => x(v))
-      .attr("y1", headerH).attr("y2", height - 16)
-      .attr("stroke", theme.borderFaint).attr("stroke-width", 1);
-    svg.append("g").attr("transform", `translate(0,${height - 16})`)
-      .call(d3.axisBottom(x).ticks(6).tickFormat(def.format).tickSizeOuter(0))
-      .call((g) => g.select(".domain").attr("stroke", theme.border))
-      .call((g) => g.selectAll(".tick line").attr("stroke", theme.border))
-      .call((g) => g.selectAll("text").attr("fill", theme.muted).attr("font-size", 10).attr("font-family", theme.fontMono));
+    drawVerticalGridlines(svg, x, headerH, height - 16, theme, { tickCount: 6 });
+    styleAxis(
+      svg.append("g").attr("transform", `translate(0,${height - 16})`)
+        .call(d3.axisBottom(x).ticks(6).tickFormat(def.format).tickSizeOuter(0)),
+      theme,
+      { fontSize: 10 }
+    );
 
-    const tooltip = d3.select(container).append("div")
-      .style("position", "absolute").style("pointer-events", "none").style("opacity", 0)
-      .style("background", theme.surfaceRaised).style("border", `1px solid ${theme.border}`)
-      .style("border-radius", theme.radius || "5px").style("padding", "0.4rem 0.6rem")
-      .style("font-size", "0.75rem").style("font-family", theme.fontMono).style("color", theme.text)
-      .style("z-index", 10).style("box-shadow", "0 6px 18px rgba(0,0,0,0.25)");
+    const tooltip = createTooltip(container, theme, { padding: "0.4rem 0.6rem", fontSize: "0.75rem", fontFamily: theme.fontMono });
 
     perPoint.forEach((p, pi) => {
       const laneY = headerH + pi * laneH;
@@ -160,20 +137,21 @@ export function makeDistributionStrip(metricKey) {
       dotG
         .on("mouseenter", function (event, d) {
           d3.select(this).attr("r", 6.5);
-          tooltip.text(`${p.label}: ${def.format(d.value)}`);
+          tooltip.clear();
+          tooltip.node.text(`${p.label}: ${def.format(d.value)}`);
           const [mx, my] = d3.pointer(event, container);
-          tooltip.style("left", `${mx + 12}px`).style("top", `${my - 10}px`).style("opacity", 1);
+          tooltip.showAt(mx + 12, my - 10);
         })
         .on("mousemove", function (event) {
           const [mx, my] = d3.pointer(event, container);
-          tooltip.style("left", `${mx + 12}px`).style("top", `${my - 10}px`);
+          tooltip.moveTo(mx + 12, my - 10);
         })
         .on("mouseleave", function () {
           d3.select(this).attr("r", 4.5);
-          tooltip.style("opacity", 0);
+          tooltip.hide();
         });
 
-      const note = svg.append("text")
+      svg.append("text")
         .attr("x", width - margin.right).attr("y", laneY + 12)
         .attr("text-anchor", "end")
         .attr("fill", theme.muted).attr("font-family", theme.fontMono).attr("font-size", 9.5)

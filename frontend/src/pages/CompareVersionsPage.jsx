@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { api } from "../api.js";
 import { ChartCard } from "../components/ChartCard.jsx";
-import { colorForIndex } from "../charts/palette.js";
+import { colorForIndex } from "../charts/comparison/palette.js";
 import renderDeltaHeader, { TITLE as DELTA_HEADER_TITLE } from "../charts/deltaHeader.js";
 import renderParetoScatter, { TITLE as PARETO_TITLE } from "../charts/paretoScatter.js";
 import renderRegressionMatrix, { TITLE as MATRIX_TITLE } from "../charts/regressionMatrix.js";

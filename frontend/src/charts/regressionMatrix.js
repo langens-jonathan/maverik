@@ -4,15 +4,24 @@
 // cost-vs-correctness.js already established for its legend collapse/deselect — a local redraw()
 // closure, not a React re-render) so toggling doesn't require new data from the page:
 //   - Annotation: fraction (always shown) plus an optional tokens or cost line. Cost reads
-//     QuestionRunResult.EstCost/EstToolCost (Phase 0 gap report, TODO A — now recorded per-case).
+//     QuestionRunResult.EstCost/EstToolCost (per-case cost — see docs/chart-design-system.md's
+//     low-n rules for why per-case, not just per-agent-aggregate, data matters here).
 //   - Diff vs. baseline: recolors candidate cells by CHANGE from baseline instead of absolute
 //     pass rate — unchanged cells recede, regressions (red) and fixes (green) are what's left to
 //     look at.
 //   - Sort: regressions-first, by how much each row's candidates fell vs. baseline.
 //
 // Contract: render(container, data, theme) where data = { baseline, candidates }.
+//
+// Built on the shared chart toolkit — see docs/chart-design-system.md. This chart doesn't use
+// axes/gridlines/beeswarm/label-collision (it's a cell grid, not a scaled plot) and keeps its one
+// native SVG <title> tooltip (the error-count badge) as-is rather than converting it to the
+// floating-div tooltip used elsewhere — noted as a deliberate deferral, not an oversight, since
+// this refactor's acceptance test is zero visual/behavioral regression.
 import * as d3 from "d3";
-import { baselineColor } from "./palette.js";
+import { baselineColor } from "./comparison/palette.js";
+import { createChartSvg } from "./core/svgFrame.js";
+import { showEmptyState } from "./core/emptyState.js";
 
 export const TITLE = "Per-question regression matrix";
 
@@ -49,7 +58,7 @@ function cellFor(point, questionId) {
 export default function render(container, data, theme) {
   const { baseline, candidates } = data;
   if (!baseline) {
-    container.textContent = "Pick a baseline version above to see its questions.";
+    showEmptyState(container, "Pick a baseline version above to see its questions.");
     return;
   }
 
@@ -57,7 +66,7 @@ export default function render(container, data, theme) {
   const questionIds = [...new Set(points.flatMap((p) => (p.results ?? []).map((c) => c.questionId)))];
 
   if (questionIds.length === 0) {
-    container.textContent = "No per-question results for the selected versions.";
+    showEmptyState(container, "No per-question results for the selected versions.");
     return;
   }
 
@@ -128,30 +137,16 @@ export default function render(container, data, theme) {
       ? [...rowsBase].sort((a, b) => regressionScore(b) - regressionScore(a))
       : rowsBase;
 
-    const width = Math.max(container.clientWidth || 0, 480);
     const labelColW = 150;
-    const colW = Math.max(76, (width - labelColW) / points.length);
     const headerH = 74; // title + subtitle + column header row
     const rowH = 36;
     const height = headerH + rows.length * rowH + 12;
+    const subtitle = state.diffMode
+      ? "Diff vs. baseline — only changed cells are colored"
+      : "Pass fraction per question, across repetitions";
 
-    const svg = svgHost.append("svg")
-      .attr("width", width).attr("height", height)
-      .attr("viewBox", `0 0 ${width} ${height}`);
-
-    svg.append("text")
-      .attr("x", 0).attr("y", 20)
-      .attr("fill", theme.textStrong).attr("font-family", theme.fontDisplay || theme.fontSans)
-      .attr("font-size", 15).attr("font-weight", 600)
-      .text(TITLE);
-    svg.append("text")
-      .attr("x", 0).attr("y", 38)
-      .attr("fill", theme.muted).attr("font-family", theme.fontMono).attr("font-size", 11)
-      .text(
-        state.diffMode
-          ? "Diff vs. baseline — only changed cells are colored"
-          : "Pass fraction per question, across repetitions"
-      );
+    const { svg, width } = createChartSvg(svgHost.node(), { minWidth: 480, height, title: TITLE, subtitle }, theme);
+    const colW = Math.max(76, (width - labelColW) / points.length);
 
     // Column headers.
     const headerY = 58;

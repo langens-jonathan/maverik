@@ -1,8 +1,8 @@
-// Shared metric definitions + formatting/delta logic for the Compare Versions charts — factored
-// out once a second chart (paretoScatter.js) needed the exact same "format this AgentSummary
-// field, compute a delta vs. baseline, color it by direction-of-goodness" logic deltaHeader.js
-// already had. Chart modules stay data-in/container-in/theme-in; this is the one piece of math
-// they share.
+// MAVERIK-specific metric definitions + formatting/delta logic for the Compare Versions charts —
+// domain data (AgentSummary/QuestionRunResult fields), not generic chart infrastructure, so this
+// stays in the comparison layer rather than charts/core. Factored out once a second chart
+// (paretoScatter.js) needed the exact same "format this AgentSummary field, compute a delta vs.
+// baseline, color it by direction-of-goodness" logic deltaHeader.js already had.
 import { deltaDirection } from "./palette.js";
 
 export function overallCostPerQuestion(summary) {
@@ -10,6 +10,16 @@ export function overallCostPerQuestion(summary) {
   const b = summary.estToolCostPerQuestion;
   if (a == null && b == null) return null;
   return (a ?? 0) + (b ?? 0);
+}
+
+// Per-case counterpart of overallCostPerQuestion, for whisker/spread computation — reads
+// QuestionRunResult.EstCost/EstToolCost directly. Both exist as of the per-case cost
+// instrumentation (see MaverikRunner.cs/MaverikSummary.cs); this was `perCase: null` on the
+// costPerQuestion metric below until that landed, which silently left the delta header's cost
+// panel as the one KPI card with no whisker even after the data existed to draw one.
+export function overallCostPerCase(c) {
+  if (c.estCost == null && c.estToolCost == null) return null;
+  return (c.estCost ?? 0) + (c.estToolCost ?? 0);
 }
 
 export function fmtMs(ms) {
@@ -40,7 +50,7 @@ export const METRICS = [
     format: fmtCost,
     upIsGood: false,
     get: overallCostPerQuestion,
-    perCase: null, // per-case cost doesn't exist yet (Phase 0 gap report, TODO A)
+    perCase: overallCostPerCase,
   },
   {
     key: "avgDurationMs",

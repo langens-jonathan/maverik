@@ -430,6 +430,7 @@ progress::-webkit-progress-value { background: var(--accent); border-radius: 3px
 .run-picker { display: flex; flex-direction: column; gap: 0.35rem; margin-bottom: 1rem; font-size: 0.85rem; }
 .run-picker-row { display: flex; align-items: center; gap: 0.5rem; cursor: pointer; }
 .visualization { margin-top: 0.5rem; }
+.visualization-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; }
 .visualization-container { overflow-x: auto; }
 /* Only meaningful inside a flex row (.viz-row) — a no-op everywhere .visualization is just a
    plain block child, so these are safe to apply unconditionally. */
