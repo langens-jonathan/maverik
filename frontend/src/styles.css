@@ -73,14 +73,18 @@
 
 :root,
 [data-theme="ops-console"] {
-  --bg: #0b0e13;
-  --surface: #10141b;
-  --surface-raised: #161c25;
-  --border: #1e2530;
-  --border-faint: #171c25;
+  /* Lightened a step from the original near-black navy (bg/surface/surface-raised/border/
+     border-faint/track all shifted by a consistent +10/+11/+12 per-channel offset, hue and
+     relative hierarchy preserved) for a crisper, less murky feel — accent/status colors and
+     text tokens are unchanged, this is purely a background-layer tune. */
+  --bg: #15191f;
+  --surface: #1a1f27;
+  --surface-raised: #202731;
+  --border: #28303c;
+  --border-faint: #212731;
   --text: #ccd3dd;
   --text-strong: #eef1f5;
-  --muted: #67707d;
+  --muted: #727a86;
 
   --accent: #e2a13f;
   --accent-strong: #edb15a;
@@ -95,7 +99,7 @@
   --warn-wash: rgba(226, 161, 63, 0.16);
   --info: #5b8fc7;
   --info-wash: rgba(91, 143, 199, 0.16);
-  --track: #171d26;
+  --track: #212832;
 
   --font-mono: ui-monospace, "SF Mono", "Cascadia Code", Consolas, monospace;
   --font-sans: -apple-system, "Segoe UI", "Helvetica Neue", Arial, sans-serif;
@@ -429,7 +433,10 @@ progress::-webkit-progress-value { background: var(--accent); border-radius: 3px
 
 .viz-row { display: flex; flex-wrap: wrap; gap: 1.5rem; align-items: flex-start; }
 
-main.wide { max-width: 1250px; }
+/* Widened from 1250px to keep 2 half-width visualizations (REPORT_HALF_WIDTH in
+   ReportViewPage.jsx) fitting side by side now that they can carry a collapsible right-side
+   legend column — see cost-vs-correctness.js. */
+main.wide { max-width: 1360px; }
 
 .report-view-header { display: flex; justify-content: flex-end; align-items: center; gap: 0.75rem; margin-bottom: 0.5rem; }
 .export-menu { position: relative; }
