@@ -29,18 +29,44 @@ export function SuiteDetailPage() {
   const [agentsById, setAgentsById] = useState({});
   const [error, setError] = useState(null);
 
-  const [selectedAgents, setSelectedAgents] = useState([]);
+  // versionsByAgent: agentId -> [{version, cutAt}, ...] newest-first (as returned by the API).
+  // selections: the run-start picker's checked state, one entry per checked (agentId, version)
+  // pair — version: null means "current (live)". Posted to POST /api/maverik/runs as-is.
+  const [versionsByAgent, setVersionsByAgent] = useState({});
+  const [versionsLoading, setVersionsLoading] = useState(true);
+  const [selections, setSelections] = useState([]);
   const [repetitions, setRepetitions] = useState(1);
   const [starting, setStarting] = useState(false);
   const [startError, setStartError] = useState(null);
 
   useEffect(() => {
     setSuite(null);
+    setVersionsLoading(true);
     Promise.all([api.getSuite(suiteId), api.listAgents()])
-      .then(([suiteData, agentsData]) => {
+      .then(async ([suiteData, agentsData]) => {
         setSuite(suiteData);
-        setSelectedAgents(suiteData.agents);
         setAgentsById(Object.fromEntries(agentsData.agents.map((a) => [a.id, a])));
+
+        // A suite agent that fails this lookup (e.g. deleted since) just gets treated as having
+        // no cut versions, rather than breaking the whole picker.
+        const versionLists = await Promise.all(
+          suiteData.agents.map((id) => api.listAgentVersions(id).catch(() => []))
+        );
+        const versionsMap = Object.fromEntries(suiteData.agents.map((id, i) => [id, versionLists[i]]));
+        setVersionsByAgent(versionsMap);
+
+        // Default selection: an agent with no cut versions pre-checks "Current" only (identical
+        // to pre-versioning behavior). An agent with >=1 cut version pre-checks its 3 most recent
+        // cut versions instead (versionsMap is already newest-first from the API).
+        setSelections(
+          suiteData.agents.flatMap((id) => {
+            const versions = versionsMap[id] || [];
+            return versions.length === 0
+              ? [{ agentId: id, version: null }]
+              : versions.slice(0, 3).map((v) => ({ agentId: id, version: v.version }));
+          })
+        );
+        setVersionsLoading(false);
       })
       .catch(setError);
   }, [suiteId]);
@@ -49,9 +75,15 @@ export function SuiteDetailPage() {
   if (error) return <p className="error-text">Failed to load suite: {error.message}</p>;
   if (!suite) return <p className="muted">Loading…</p>;
 
-  function toggleAgent(id) {
-    setSelectedAgents((prev) =>
-      prev.includes(id) ? prev.filter((a) => a !== id) : [...prev, id]
+  function isSelected(agentId, version) {
+    return selections.some((s) => s.agentId === agentId && s.version === version);
+  }
+
+  function toggleSelection(agentId, version) {
+    setSelections((prev) =>
+      prev.some((s) => s.agentId === agentId && s.version === version)
+        ? prev.filter((s) => !(s.agentId === agentId && s.version === version))
+        : [...prev, { agentId, version }]
     );
   }
 
@@ -61,7 +93,7 @@ export function SuiteDetailPage() {
     try {
       const { runId } = await api.startRun({
         suiteId: suite.id,
-        agentIds: selectedAgents,
+        agentSelections: selections,
         repetitions: Number(repetitions),
       });
       navigate(`/runs/${encodeURIComponent(runId)}`);
@@ -107,17 +139,36 @@ export function SuiteDetailPage() {
       <div className="card">
         <h3>Run this suite</h3>
         <label>Agents</label>
-        <div className="checkbox-list">
-          {suite.agents.map((agentId) => (
-            <label key={agentId}>
-              <input
-                type="checkbox"
-                checked={selectedAgents.includes(agentId)}
-                onChange={() => toggleAgent(agentId)}
-              />
-              {agentsById[agentId]?.name || agentId}
-            </label>
-          ))}
+        {versionsLoading && <p className="muted">Loading agent versions…</p>}
+        <div className="agent-selection-groups">
+          {suite.agents.map((agentId) => {
+            const versions = versionsByAgent[agentId] || [];
+            return (
+              <div className="agent-selection-group" key={agentId}>
+                <div className="agent-selection-group-name">{agentsById[agentId]?.name || agentId}</div>
+                <div className="checkbox-list">
+                  <label>
+                    <input
+                      type="checkbox"
+                      checked={isSelected(agentId, null)}
+                      onChange={() => toggleSelection(agentId, null)}
+                    />
+                    Current (live)
+                  </label>
+                  {versions.map((v) => (
+                    <label key={v.version}>
+                      <input
+                        type="checkbox"
+                        checked={isSelected(agentId, v.version)}
+                        onChange={() => toggleSelection(agentId, v.version)}
+                      />
+                      v{v.version} <span className="muted">({new Date(v.cutAt).toLocaleDateString()})</span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+            );
+          })}
         </div>
 
         <label htmlFor="repetitions">Repetitions</label>
@@ -133,7 +184,7 @@ export function SuiteDetailPage() {
         <p>
           <button
             onClick={startRun}
-            disabled={starting || selectedAgents.length === 0}
+            disabled={starting || versionsLoading || selections.length === 0}
           >
             {starting ? "Starting…" : "Start run"}
           </button>

@@ -1,3 +1,4 @@
+using McpHost.Config;
 using McpHost.Maverik;
 using Microsoft.Extensions.Logging.Abstractions;
 
@@ -44,14 +45,14 @@ public class MaverikResultsWriterTests
     }
 
     private static AgentSummary MinimalAgentSummary(string agentId) => new(
-        AgentId: agentId, PassRate: 1.0, AvgDurationMs: 100, AvgInputTokens: 10, AvgOutputTokens: 5,
+        AgentId: agentId, Version: null, PassRate: 1.0, AvgDurationMs: 100, AvgInputTokens: 10, AvgOutputTokens: 5,
         AvgIterations: 1, AvgToolCalls: 0, AvgPeakContextTokens: null, MaxPeakContextTokens: null,
         AvgCacheReadInputTokens: null, AvgCacheCreationInputTokens: null,
         EstCostPerQuestion: null, EstCostTotal: null, EstToolCostPerQuestion: null, EstToolCostTotal: null,
         EstOverallCostTotal: null, Errors: 0, CasesWithoutUsage: 0, CapabilityDigest: null, CapabilityToolCount: null);
 
     private static RunStatus MinimalRun(string runId) => new(
-        RunId: runId, SuiteId: "suite-1", AgentIds: ["agent1"], Repetitions: 1, State: "completed",
+        RunId: runId, SuiteId: "suite-1", AgentSelections: [new AgentSelection("agent1", null)], Repetitions: 1, State: "completed",
         TotalCases: 1, CompletedCases: 1, CreatedAt: DateTimeOffset.UtcNow, StartedAt: DateTimeOffset.UtcNow,
         FinishedAt: DateTimeOffset.UtcNow, Results: [Result()], JudgedMetrics: []);
 
@@ -64,7 +65,7 @@ public class MaverikResultsWriterTests
         var tempDir = Path.Combine(Path.GetTempPath(), "maverik-tests-" + Guid.NewGuid().ToString("N"));
         try
         {
-            var writer = new MaverikResultsWriter(tempDir, NullLogger<MaverikResultsWriter>.Instance);
+            var writer = new MaverikResultsWriter(tempDir, new ConfigFileService(tempDir), NullLogger<MaverikResultsWriter>.Instance);
             var run = MinimalRun("run-1");
 
             await writer.WriteAsync(run, MinimalSummary("run-1"), CancellationToken.None);
@@ -86,7 +87,7 @@ public class MaverikResultsWriterTests
         var tempDir = Path.Combine(Path.GetTempPath(), "maverik-tests-" + Guid.NewGuid().ToString("N"));
         try
         {
-            var writer = new MaverikResultsWriter(tempDir, NullLogger<MaverikResultsWriter>.Instance);
+            var writer = new MaverikResultsWriter(tempDir, new ConfigFileService(tempDir), NullLogger<MaverikResultsWriter>.Instance);
             await writer.WriteAsync(MinimalRun("good-run"), MinimalSummary("good-run"), CancellationToken.None);
 
             var suiteRunsDir = Path.Combine(tempDir, "results", "suite-runs");

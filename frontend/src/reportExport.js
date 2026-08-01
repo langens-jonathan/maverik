@@ -1,7 +1,7 @@
 // Client-side export for the report "Open" screen — no backend endpoint, since everything needed
 // (the matching SuiteRunRecords, the already-rendered dashboard DOM) is already in the browser.
 
-function triggerDownload(blob, filename) {
+export function triggerDownload(blob, filename) {
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;

@@ -44,6 +44,42 @@ public sealed class ConfigFileService
     public (CapabilityOverridesFile Data, bool Bootstrapped) LoadCapabilityOverrides() => Load<CapabilityOverridesFile>("capability-overrides.json");
     public void SaveCapabilityOverrides(CapabilityOverridesFile data) => Save("capability-overrides.json", data);
 
+    // One file per (agent, version) under agent-versions/<agentId>/ — cut via
+    // POST /api/config/agents/{id}/versions, never overwritten once written. A subdirectory per
+    // agent, unlike results/suite-runs/'s flat naming: versions are always listed *within* one
+    // agent, so this needs no filename parsing to answer "list every version of X".
+    public IReadOnlyList<(int Version, DateTimeOffset CutAt)> ListAgentVersions(string agentId)
+    {
+        var dir = AgentVersionsDir(agentId);
+        if (!Directory.Exists(dir))
+            return Array.Empty<(int, DateTimeOffset)>();
+
+        return Directory.GetFiles(dir, "*.json")
+            .Select(path => JsonSerializer.Deserialize<AgentVersionSnapshot>(File.ReadAllText(path), ReadOptions))
+            .Where(s => s is not null)
+            .Select(s => (s!.Version, s.CutAt))
+            .OrderByDescending(v => v.Version)
+            .ToList();
+    }
+
+    public AgentVersionSnapshot? LoadAgentVersion(string agentId, int version)
+    {
+        var path = AgentVersionPath(agentId, version);
+        return File.Exists(path)
+            ? JsonSerializer.Deserialize<AgentVersionSnapshot>(File.ReadAllText(path), ReadOptions)
+            : null;
+    }
+
+    public void SaveAgentVersion(AgentVersionSnapshot snapshot)
+    {
+        var path = AgentVersionPath(snapshot.AgentId, snapshot.Version);
+        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+        File.WriteAllText(path, JsonSerializer.Serialize(snapshot, WriteOptions));
+    }
+
+    private string AgentVersionsDir(string agentId) => Path.Combine(_configDir, "agent-versions", agentId);
+    private string AgentVersionPath(string agentId, int version) => Path.Combine(AgentVersionsDir(agentId), version + ".json");
+
     // One file per suite under maverik-suites/, unlike the single-file configs above — no
     // bootstrap-from-example (suites are real authored content, not secrets/user-specific
     // values; see MaverikSuiteRegistry for the loader that reads all of them at once).

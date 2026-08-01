@@ -141,6 +141,7 @@ builder.Services.AddSingleton<MaverikRunQueue>();
 builder.Services.AddSingleton<MaverikRunStore>();
 builder.Services.AddSingleton<MaverikResultsWriter>(sp => new MaverikResultsWriter(
     builder.Environment.ContentRootPath,
+    sp.GetRequiredService<ConfigFileService>(),
     sp.GetRequiredService<ILogger<MaverikResultsWriter>>()));
 builder.Services.AddHostedService<MaverikRunner>();
 
@@ -253,6 +254,62 @@ app.MapPut("/api/config/agents", (AgentsFile data, ConfigFileService cfg, AgentR
 
     cfg.SaveAgents(data);
     return Results.Ok(ApplyAgentsReload(data, agentRegistry));
+});
+
+// Cuts a new version of one agent from whatever is currently persisted in agents.json — not an
+// unsaved client-side draft; the UI is expected to save first (see AgentsConfigPage.jsx). Writes
+// an immutable snapshot (see ConfigFileService.SaveAgentVersion) and bumps that agent's Version
+// field in agents.json so the live config reflects "this is version N now."
+app.MapPost("/api/config/agents/{id}/versions", (string id, ConfigFileService cfg, AgentRegistry agentRegistry) =>
+{
+    var (agentsFile, _) = cfg.LoadAgents();
+    var target = agentsFile.Agents.FirstOrDefault(a => a.Id == id);
+    if (target is null)
+        return Results.BadRequest(new { error = $"No agent with id '{id}'." });
+
+    var existing = cfg.ListAgentVersions(id);
+    var nextVersion = existing.Count == 0 ? 1 : existing.Max(v => v.Version) + 1;
+    var cutAt = DateTimeOffset.UtcNow;
+
+    // Snapshot must be self-contained: a file-based prompt (SystemPrompt left null in
+    // agents.json) needs inlining here, the same way AgentsConfigPage.jsx's duplicateAgent
+    // already does client-side — otherwise the frozen copy would silently lose the prompt.
+    var systemPrompt = target.SystemPrompt;
+    if (string.IsNullOrWhiteSpace(systemPrompt))
+        systemPrompt = cfg.LoadPrompt(id).Content;
+
+    target.Version = nextVersion;
+    var snapshotConfig = new AgentConfig
+    {
+        Id = target.Id,
+        Name = target.Name,
+        Description = target.Description,
+        Model = target.Model,
+        LoopType = target.LoopType,
+        SystemPrompt = systemPrompt,
+        McpServers = [.. target.McpServers],
+        MaxIterations = target.MaxIterations,
+        PromptCaching = target.PromptCaching,
+        PromptCachingTtl = target.PromptCachingTtl,
+        Version = nextVersion,
+    };
+    cfg.SaveAgentVersion(new AgentVersionSnapshot(id, nextVersion, cutAt, snapshotConfig));
+
+    cfg.SaveAgents(agentsFile);
+    var reload = ApplyAgentsReload(agentsFile, agentRegistry);
+    return Results.Ok(new { version = nextVersion, cutAt, reload });
+});
+
+// List, newest-first — version + cutAt only (not the full config), keeps this call cheap for a
+// picker that just needs to know what's available.
+app.MapGet("/api/config/agents/{id}/versions", (string id, ConfigFileService cfg) =>
+    Results.Ok(cfg.ListAgentVersions(id).Select(v => new { v.Version, v.CutAt })));
+
+// One full historical snapshot — used by both a "view" action and per-version export.
+app.MapGet("/api/config/agents/{id}/versions/{version:int}", (string id, int version, ConfigFileService cfg) =>
+{
+    var snapshot = cfg.LoadAgentVersion(id, version);
+    return snapshot is null ? Results.NotFound() : Results.Ok(snapshot);
 });
 
 app.MapGet("/api/config/llm-models", (ConfigFileService cfg) =>
@@ -496,20 +553,23 @@ app.MapDelete("/api/reporting/dashboards/{id}", (string id, ConfigFileService cf
 // 400, not mid-run; the runner can then assume a well-formed request. Returns { runId }
 // immediately — results arrive by polling the endpoints below.
 app.MapPost("/api/maverik/runs", async (
-    StartRunRequest request, MaverikSuiteRegistry suites, AgentRegistry agents,
+    StartRunRequest request, MaverikSuiteRegistry suites, AgentRegistry agents, ConfigFileService cfg,
     MaverikRunStore store, MaverikRunQueue queue) =>
 {
     MaverikSuite suite;
     try { suite = suites.Resolve(request.SuiteId ?? ""); }
     catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
 
-    // The request's agent list wins; otherwise the suite's default set.
-    var agentIds = request.AgentIds is { Count: > 0 } ? request.AgentIds : suite.Agents;
-    if (agentIds.Count == 0)
-        return Results.BadRequest(new { error = $"Suite '{suite.Id}' has no default agents; pass agentIds." });
-    foreach (var agentId in agentIds)
+    // The request's agent selections win; otherwise the suite's default set, each unversioned
+    // (i.e. running its live/current config) — matches pre-versioning behavior exactly.
+    var agentSelections = request.AgentSelections is { Count: > 0 }
+        ? request.AgentSelections
+        : suite.Agents.Select(id => new AgentSelection(id, null)).ToList();
+    if (agentSelections.Count == 0)
+        return Results.BadRequest(new { error = $"Suite '{suite.Id}' has no default agents; pass agentSelections." });
+    foreach (var sel in agentSelections)
     {
-        try { agents.Resolve(agentId); }
+        try { AgentVersionResolver.Resolve(sel.AgentId, sel.Version, agents, cfg); }
         catch (InvalidOperationException ex) { return Results.BadRequest(new { error = ex.Message }); }
     }
 
@@ -531,16 +591,17 @@ app.MapPost("/api/maverik/runs", async (
         runId += "x";
 
     store.Set(new RunStatus(
-        runId, suite.Id, agentIds, repetitions,
+        RunId: runId, SuiteId: suite.Id, Repetitions: repetitions,
         State: "queued",
-        TotalCases: agentIds.Count * suite.Questions.Count * repetitions,
+        TotalCases: agentSelections.Count * suite.Questions.Count * repetitions,
         CompletedCases: 0,
         CreatedAt: DateTimeOffset.UtcNow,
         StartedAt: null, FinishedAt: null,
         Results: [],
-        JudgedMetrics: metrics));
+        JudgedMetrics: metrics,
+        AgentSelections: agentSelections));
 
-    await queue.EnqueueAsync(new RunRequest(runId, suite.Id, agentIds, repetitions, metrics));
+    await queue.EnqueueAsync(new RunRequest(runId, suite.Id, agentSelections, repetitions, metrics));
     return Results.Ok(new { runId });
 });
 
@@ -568,9 +629,9 @@ app.MapGet("/api/maverik/runs/{runId}", (string runId, MaverikRunStore store) =>
 // completes (see MaverikRunner/MaverikResultsWriter).
 app.MapGet("/api/maverik/runs/{runId}/summary", (
     string runId, MaverikRunStore store, MaverikSuiteRegistry suites, AgentRegistry agents, LLMModelRegistry models,
-    McpServerRegistry mcp, ToolCostRegistry toolCosts) =>
+    McpServerRegistry mcp, ToolCostRegistry toolCosts, ConfigFileService cfg) =>
     store.Get(runId) is { } run
-        ? Results.Ok(MaverikSummaryBuilder.Build(run, suites, agents, models, mcp, toolCosts))
+        ? Results.Ok(MaverikSummaryBuilder.Build(run, suites, agents, models, mcp, toolCosts, cfg))
         : Results.NotFound(new { error = $"No run '{runId}'." }));
 
 // List persisted per-(suite, agent, timestamp) benchmark records — the comparison-ready
@@ -732,7 +793,7 @@ public record ChatRequest(string Message, string? Agent = null);
 
 // Body of POST /api/maverik/runs. AgentIds defaults to the suite's list, Repetitions to 1,
 // Metrics to every key in MaverikMetrics.All.
-public record StartRunRequest(string? SuiteId, List<string>? AgentIds = null, int? Repetitions = null, List<string>? Metrics = null);
+public record StartRunRequest(string? SuiteId, List<AgentSelection>? AgentSelections = null, int? Repetitions = null, List<string>? Metrics = null);
 
 // Body of PUT /api/config/prompts/{agentId}.
 public record PromptRequest(string? Content);

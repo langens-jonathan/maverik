@@ -82,8 +82,11 @@ export function RunDetailPage() {
           {summary.agents.map((a, i) => {
             const color = AGENT_COLORS[i % AGENT_COLORS.length];
             return (
-              <div className="agent-block" key={a.agentId}>
-                <h4>{a.agentId}</h4>
+              <div className="agent-block" key={`${a.agentId}:${a.version ?? "live"}`}>
+                <h4>
+                  {a.agentId}
+                  {a.version != null && <span className="version-badge">v{a.version}</span>}
+                </h4>
                 <BarRow label="Pass rate" value={a.passRate} max={1} display={fmtPct(a.passRate)} color={color} />
                 <BarRow
                   label="Avg duration"
@@ -175,12 +178,15 @@ export function RunDetailPage() {
           </thead>
           <tbody>
             {run.results.map((c, i) => {
-              const key = `${c.agentId}:${c.questionId}:${c.repetition}`;
+              const key = `${c.agentId}:${c.version ?? "live"}:${c.questionId}:${c.repetition}`;
               const isOpen = expanded === key;
               return (
                 <Fragment key={key}>
                   <tr onClick={() => setExpanded(isOpen ? null : key)} style={{ cursor: "pointer" }}>
-                    <td className="mono">{c.agentId}</td>
+                    <td className="mono">
+                      {c.agentId}
+                      {c.version != null ? ` (v${c.version})` : ""}
+                    </td>
                     <td className="mono">{c.questionId}</td>
                     <td className="mono">{c.repetition}</td>
                     <td className="mono">{fmtMs(c.durationMs)}</td>

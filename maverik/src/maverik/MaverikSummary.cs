@@ -1,4 +1,5 @@
 using McpHost.Agents;
+using McpHost.Config;
 using McpHost.LlmModel;
 using McpHost.Mcp;
 
@@ -9,6 +10,10 @@ namespace McpHost.Maverik;
 // the run is still going or finished.
 public sealed record AgentSummary(
     string AgentId,
+    // null = ran against the live/current config — see AgentSelection. Lets the frontend label
+    // "github-agent (v2)" vs "github-agent (v3)" as distinct rows when a batch ran several
+    // versions of the same agent.
+    int? Version,
     double PassRate,
     double AvgDurationMs,
     double? AvgInputTokens,
@@ -50,22 +55,24 @@ public static class MaverikSummaryBuilder
 {
     public static RunSummary Build(
         RunStatus run, MaverikSuiteRegistry suites, AgentRegistry agents, LLMModelRegistry models,
-        McpServerRegistry mcp, ToolCostRegistry toolCosts)
+        McpServerRegistry mcp, ToolCostRegistry toolCosts, ConfigFileService configFiles)
     {
-        var agentSummaries = run.AgentIds
-            .Select(agentId => BuildAgentSummary(
-                agentId, run.Results.Where(r => r.AgentId == agentId).ToList(), agents, models, mcp, toolCosts,
-                run.CapabilityBundles.GetValueOrDefault(agentId)))
+        var agentSummaries = run.AgentSelections
+            .Select(sel => BuildAgentSummary(
+                sel.AgentId, sel.Version,
+                run.Results.Where(r => r.AgentId == sel.AgentId && r.Version == sel.Version).ToList(),
+                agents, models, mcp, toolCosts, configFiles,
+                run.CapabilityBundles.GetValueOrDefault(sel)))
             .ToList();
 
         return new RunSummary(run.RunId, agentSummaries, BuildJudgeOverhead(run, suites, models));
     }
 
     private static AgentSummary BuildAgentSummary(
-        string agentId, IReadOnlyList<QuestionRunResult> cases, AgentRegistry agents, LLMModelRegistry models,
-        McpServerRegistry mcp, ToolCostRegistry toolCosts, CapabilityBundle? bundle)
+        string agentId, int? version, IReadOnlyList<QuestionRunResult> cases, AgentRegistry agents, LLMModelRegistry models,
+        McpServerRegistry mcp, ToolCostRegistry toolCosts, ConfigFileService configFiles, CapabilityBundle? bundle)
     {
-        var agent = agents.Resolve(agentId);
+        var agent = AgentVersionResolver.Resolve(agentId, version, agents, configFiles);
 
         var errors = cases.Count(c => c.Error != null);
         // An errored case never reached evaluation — excluded from every average below so one
@@ -152,7 +159,7 @@ public static class MaverikSummaryBuilder
             : (estCostTotal ?? 0m) + (estToolCostTotal ?? 0m);
 
         return new AgentSummary(
-            agentId, passRate, avgDurationMs, avgInputTokens, avgOutputTokens, avgIterations, avgToolCalls,
+            agentId, version, passRate, avgDurationMs, avgInputTokens, avgOutputTokens, avgIterations, avgToolCalls,
             avgPeakContextTokens, maxPeakContextTokens, avgCacheReadInputTokens, avgCacheCreationInputTokens,
             estCostPerQuestion, estCostTotal, estToolCostPerQuestion, estToolCostTotal, estOverallCostTotal,
             errors, casesWithoutUsage, bundle?.Digest, bundle?.ToolCount);
