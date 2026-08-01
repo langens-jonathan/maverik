@@ -3,6 +3,14 @@ import { api } from "../api.js";
 import { ChartCard } from "../components/ChartCard.jsx";
 import { colorForIndex } from "../charts/palette.js";
 import renderDeltaHeader, { TITLE as DELTA_HEADER_TITLE } from "../charts/deltaHeader.js";
+import renderParetoScatter, { TITLE as PARETO_TITLE } from "../charts/paretoScatter.js";
+import renderRegressionMatrix, { TITLE as MATRIX_TITLE } from "../charts/regressionMatrix.js";
+import { makeDistributionStrip } from "../charts/distributionStrip.js";
+import renderToolUsageFlow, { TITLE as TOOL_FLOW_TITLE } from "../charts/toolUsageFlow.js";
+
+const renderDurationStrip = makeDistributionStrip("durationMs");
+const renderInputTokensStrip = makeDistributionStrip("inputTokens");
+const renderOutputTokensStrip = makeDistributionStrip("outputTokens");
 
 function pointLabel(version) {
   return version == null ? "Current" : `v${version}`;
@@ -15,6 +23,7 @@ function fmtTimestamp(ts) {
 export function CompareVersionsPage() {
   const [suites, setSuites] = useState([]);
   const [agentsById, setAgentsById] = useState({});
+  const [toolCosts, setToolCosts] = useState([]);
   const [loadError, setLoadError] = useState(null);
 
   const [suiteId, setSuiteId] = useState("");
@@ -25,10 +34,11 @@ export function CompareVersionsPage() {
   const [candidateVersions, setCandidateVersions] = useState(new Set());
 
   useEffect(() => {
-    Promise.all([api.listSuites(), api.listAgents()])
-      .then(([suitesRes, agentsRes]) => {
+    Promise.all([api.listSuites(), api.listAgents(), api.getToolCostsConfig()])
+      .then(([suitesRes, agentsRes, toolCostsRes]) => {
         setSuites(suitesRes);
         setAgentsById(Object.fromEntries(agentsRes.agents.map((a) => [a.id, a])));
+        setToolCosts(toolCostsRes.data.toolCosts ?? []);
         if (suitesRes.length > 0) setSuiteId(suitesRes[0].id);
       })
       .catch((err) => setLoadError(err.message));
@@ -124,8 +134,9 @@ export function CompareVersionsPage() {
         summary: p.summary,
         results: p.results,
       })),
+      toolCosts,
     };
-  }, [baselinePoint, candidatePoints]);
+  }, [baselinePoint, candidatePoints, toolCosts]);
 
   if (loadError) return <p className="error-text">Failed to load: {loadError}</p>;
 
@@ -216,6 +227,66 @@ export function CompareVersionsPage() {
           filename={`delta-header-${agentId}`}
           data={chartData}
           render={renderDeltaHeader}
+        />
+      )}
+
+      {chartData && (
+        <ChartCard
+          title={PARETO_TITLE}
+          subtitle="Which version to ship — cost vs. pass rate, sized by duration, efficient set on the frontier."
+          filename={`pareto-scatter-${agentId}`}
+          data={chartData}
+          render={renderParetoScatter}
+        />
+      )}
+
+      {chartData && (
+        <ChartCard
+          title={MATRIX_TITLE}
+          subtitle="The pre-ship safety check — every question, every selected version, sortable, with a diff-vs-baseline mode."
+          filename={`regression-matrix-${agentId}`}
+          data={chartData}
+          render={renderRegressionMatrix}
+        />
+      )}
+
+      {chartData && (
+        <ChartCard
+          title={renderDurationStrip.TITLE}
+          subtitle="Every repetition's wall-clock duration, honest at any n — a cost strip joins these once per-case cost is recorded."
+          filename={`duration-strip-${agentId}`}
+          data={chartData}
+          render={renderDurationStrip}
+        />
+      )}
+
+      {chartData && (
+        <ChartCard
+          title={renderInputTokensStrip.TITLE}
+          subtitle="Per-repetition input token counts — usually the most deterministic metric here."
+          filename={`input-tokens-strip-${agentId}`}
+          data={chartData}
+          render={renderInputTokensStrip}
+        />
+      )}
+
+      {chartData && (
+        <ChartCard
+          title={renderOutputTokensStrip.TITLE}
+          subtitle="Per-repetition output token counts."
+          filename={`output-tokens-strip-${agentId}`}
+          data={chartData}
+          render={renderOutputTokensStrip}
+        />
+      )}
+
+      {chartData && (
+        <ChartCard
+          title={TOOL_FLOW_TITLE}
+          subtitle="Grouped bar, not a Sankey — one agent's versions rarely have enough distinct tool paths to earn one. Reveals behavioral drift in which tools get called."
+          filename={`tool-usage-flow-${agentId}`}
+          data={chartData}
+          render={renderToolUsageFlow}
         />
       )}
     </div>

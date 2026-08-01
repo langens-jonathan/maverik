@@ -8,77 +8,10 @@
 // `baseline`/each entry of `candidates` is { label, color, summary: AgentSummary, results:
 // QuestionRunResult[] }. `candidates` may be empty — see the single-version branch below.
 import * as d3 from "d3";
-import { colorForIndex, baselineColor, deltaDirection } from "./palette.js";
+import { baselineColor } from "./palette.js";
+import { METRICS, computeDelta, spread } from "./metrics.js";
 
 export const TITLE = "Delta vs. baseline";
-
-const METRICS = [
-  {
-    key: "passRate",
-    label: "Pass rate",
-    format: (v) => `${Math.round(v * 100)}%`,
-    upIsGood: true,
-    get: (s) => s.passRate,
-    perCase: null, // a rate, not a per-case quantity — no whisker
-  },
-  {
-    key: "costPerQuestion",
-    label: "Cost / question",
-    format: (v) => `$${v.toFixed(4)}`,
-    upIsGood: false,
-    get: overallCostPerQuestion,
-    perCase: null, // per-case cost doesn't exist yet (Phase 0 gap report, TODO A)
-  },
-  {
-    key: "avgDurationMs",
-    label: "Avg duration",
-    format: fmtMs,
-    upIsGood: false,
-    get: (s) => s.avgDurationMs,
-    perCase: (c) => c.durationMs,
-  },
-  {
-    key: "avgInputTokens",
-    label: "Avg input tokens",
-    format: fmtTokens,
-    upIsGood: false,
-    get: (s) => s.avgInputTokens,
-    perCase: (c) => c.inputTokens,
-  },
-  {
-    key: "avgToolCalls",
-    label: "Avg tool calls",
-    format: (v) => v.toFixed(1),
-    upIsGood: null, // neither direction is inherently better — shown without judgment coloring
-    get: (s) => s.avgToolCalls,
-    perCase: (c) => c.toolCallCount,
-  },
-];
-
-function overallCostPerQuestion(summary) {
-  const a = summary.estCostPerQuestion;
-  const b = summary.estToolCostPerQuestion;
-  if (a == null && b == null) return null;
-  return (a ?? 0) + (b ?? 0);
-}
-
-function fmtMs(ms) {
-  return ms >= 1000 ? `${(ms / 1000).toFixed(1)}s` : `${Math.round(ms)}ms`;
-}
-function fmtTokens(t) {
-  return Math.round(t).toLocaleString();
-}
-
-function spread(results, perCaseFn) {
-  if (!perCaseFn) return null;
-  const values = (results ?? []).filter((c) => c.error == null).map(perCaseFn).filter((v) => v != null);
-  if (values.length === 0) return null;
-  return {
-    min: Math.min(...values),
-    max: Math.max(...values),
-    mean: values.reduce((a, b) => a + b, 0) / values.length,
-  };
-}
 
 export default function render(container, data, theme) {
   const { baseline, candidates } = data;
@@ -194,25 +127,12 @@ export default function render(container, data, theme) {
     candidates.forEach((cand, ci) => {
       const value = metric.get(cand.summary);
       const spreadInfo = spread(cand.results, metric.perCase);
-      let deltaText = null, deltaColor = theme.muted, deltaGlyph = "";
-      if (value != null && baseValue != null) {
-        const delta = value - baseValue;
-        const pct = baseValue !== 0 ? (delta / Math.abs(baseValue)) * 100 : null;
-        deltaText = pct == null ? metric.format(Math.abs(delta)) : `${pct >= 0 ? "+" : ""}${pct.toFixed(0)}%`;
-        if (metric.upIsGood == null) {
-          deltaGlyph = delta > 0 ? "▲" : delta < 0 ? "▼" : "•";
-          deltaColor = theme.muted;
-        } else {
-          const dir = deltaDirection(delta, metric.upIsGood, theme);
-          deltaGlyph = dir.glyph;
-          deltaColor = dir.color;
-        }
-      }
+      const d = computeDelta(metric, baseValue, value, theme);
       drawRow(
         panelHeaderH + rowHeight * (1.55 + ci),
         value, spreadInfo,
         cand.color, theme.text,
-        deltaText, deltaColor, deltaGlyph,
+        d.text, d.color, d.glyph,
         "circle"
       );
     });
