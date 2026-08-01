@@ -7,9 +7,12 @@ import { ExportMenu } from "../components/ExportMenu.jsx";
 import { exportReportCsv, exportReportPdf } from "../reportExport.js";
 
 // Pixel budgets for the two-column visualization grid below — sized for this page's wider
-// `main.wide` layout (see styles.css), not the 900px width every other page uses.
-const REPORT_FULL_WIDTH = 1100;
-const REPORT_HALF_WIDTH = 538;
+// `main.wide` layout (see styles.css), not the 900px width every other page uses. Widened from
+// 1100/538 to fit a collapsible right-side legend column (see cost-vs-correctness.js) inside a
+// half-width chart while still fitting two side by side; main.wide's max-width was widened to
+// match (see styles.css).
+const REPORT_FULL_WIDTH = 1184;
+const REPORT_HALF_WIDTH = 580;
 
 // The plain "here's the report" view: load the saved report, resolve its filter against every
 // currently-matching suite-run (no manual narrowing — that's what Configure is for), and render

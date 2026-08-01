@@ -1,56 +1,96 @@
 // Bar chart: average case duration (ms) per agent, one bar per SuiteRunRecord in `data`.
 // See ../README.md for the function contract.
+//
+// Styled per the dataviz skill: CSS custom properties so this matches every MAVERIK theme.
+// Nominal, unordered categories (agent + date combos) get ONE color for every bar
+// (marks-and-anatomy.md/anti-patterns.md — a per-bar rainbow on unordered categories is an
+// anti-pattern), so no legend is needed; each bar's own x-axis label already carries identity.
 export default function (container, data, { d3, halfWidth }) {
   if (data.length === 0) {
     container.textContent = "No runs selected.";
     return;
   }
 
-  const width = halfWidth ?? 480;
-  const height = 260;
-  const margin = { top: 20, right: 16, bottom: 60, left: 56 };
-
   const bars = data.map((r) => ({
     label: `${r.agentId} (${new Date(r.timestamp).toLocaleDateString()})`,
     value: r.summary.avgDurationMs,
   }));
 
-  const svg = d3
-    .select(container)
-    .append("svg")
-    .attr("width", width)
-    .attr("height", height);
+  const width = halfWidth ?? 480;
+  const height = 280;
+  const margin = { top: 20, right: 16, bottom: 76, left: 56 };
+  const BAR_MAX_WIDTH = 24; // mark spec: bars are capped, never fill the whole band
 
-  const x = d3
-    .scaleBand()
-    .domain(bars.map((b) => b.label))
-    .range([margin.left, width - margin.right])
-    .padding(0.2);
+  const root = d3.select(container).append("div").style("position", "relative");
+  const svg = root.append("svg").attr("width", width).attr("height", height).style("overflow", "visible");
 
-  const y = d3
-    .scaleLinear()
-    .domain([0, d3.max(bars, (b) => b.value) ?? 0])
-    .nice()
-    .range([height - margin.bottom, margin.top]);
+  const x = d3.scaleBand().domain(bars.map((b) => b.label)).range([margin.left, width - margin.right]).padding(0.25);
+  const y = d3.scaleLinear().domain([0, d3.max(bars, (b) => b.value) ?? 0]).nice().range([height - margin.bottom, margin.top]);
+  const barWidth = Math.min(x.bandwidth(), BAR_MAX_WIDTH);
 
-  svg
-    .append("g")
+  svg.append("g")
+    .selectAll("line")
+    .data(y.ticks(5))
+    .join("line")
+    .attr("x1", margin.left).attr("x2", width - margin.right)
+    .attr("y1", (v) => y(v)).attr("y2", (v) => y(v))
+    .attr("stroke", "var(--border-faint)").attr("stroke-width", 1);
+
+  svg.append("g")
     .attr("transform", `translate(0,${height - margin.bottom})`)
-    .call(d3.axisBottom(x))
-    .selectAll("text")
-    .attr("transform", "rotate(-30)")
-    .style("text-anchor", "end");
+    .call(d3.axisBottom(x).tickSizeOuter(0))
+    .call((g) => g.select(".domain").attr("stroke", "var(--border)"))
+    .call((g) => g.selectAll(".tick line").attr("stroke", "var(--border)"))
+    .call((g) => g.selectAll("text")
+      .attr("fill", "var(--muted)").attr("font-size", 11).attr("font-family", "var(--font-mono)")
+      .attr("transform", "rotate(-30)").style("text-anchor", "end"));
 
-  svg.append("g").attr("transform", `translate(${margin.left},0)`).call(d3.axisLeft(y));
+  svg.append("g")
+    .attr("transform", `translate(${margin.left},0)`)
+    .call(d3.axisLeft(y).ticks(5).tickSizeOuter(0))
+    .call((g) => g.select(".domain").attr("stroke", "var(--border)"))
+    .call((g) => g.selectAll(".tick line").attr("stroke", "var(--border)"))
+    .call((g) => g.selectAll("text").attr("fill", "var(--muted)").attr("font-size", 11).attr("font-family", "var(--font-mono)"));
 
-  svg
-    .append("g")
-    .selectAll("rect")
+  // Top-rounded, square-at-baseline bar path (4px radius) — a plain rect with `rx` rounds all
+  // four corners, which isn't the spec, so this builds the path by hand.
+  function barPath(bx, by, bw, baselineY, radius) {
+    const r = Math.min(radius, bw / 2, Math.max(0, baselineY - by));
+    return `M${bx},${baselineY} V${by + r} Q${bx},${by} ${bx + r},${by} H${bx + bw - r} Q${bx + bw},${by} ${bx + bw},${by + r} V${baselineY} Z`;
+  }
+
+  const tooltip = d3.select(container)
+    .append("div")
+    .style("position", "absolute").style("pointer-events", "none").style("opacity", 0)
+    .style("background", "var(--surface-raised)").style("border", "1px solid var(--border)")
+    .style("border-radius", "var(--radius)").style("box-shadow", "0 6px 18px rgba(0,0,0,0.25)")
+    .style("padding", "0.5rem 0.65rem").style("font-size", "0.78rem").style("font-family", "var(--font-sans)")
+    .style("color", "var(--text)").style("z-index", 10).style("transition", "opacity 0.1s");
+
+  svg.append("g")
+    .selectAll("path")
     .data(bars)
-    .join("rect")
-    .attr("x", (b) => x(b.label))
-    .attr("y", (b) => y(b.value))
-    .attr("width", x.bandwidth())
-    .attr("height", (b) => y(0) - y(b.value))
-    .attr("fill", "steelblue");
+    .join("path")
+    .attr("d", (b) => barPath(x(b.label) + (x.bandwidth() - barWidth) / 2, y(b.value), barWidth, height - margin.bottom, 4))
+    .attr("fill", "var(--accent)")
+    .style("cursor", "pointer")
+    .style("transition", "opacity 0.12s")
+    .attr("tabindex", 0)
+    .on("mouseenter focus", function (event, b) {
+      d3.select(this).style("opacity", 0.75);
+      tooltip.selectAll("*").remove();
+      tooltip.append("div").style("font-weight", 600).style("color", "var(--text-strong)")
+        .text(`${Math.round(b.value).toLocaleString()} ms`);
+      tooltip.append("div").style("margin-top", "0.15rem").style("color", "var(--muted)").text(b.label);
+      const bx = x(b.label) + x.bandwidth() / 2;
+      tooltip.style("left", `${bx + 12}px`).style("top", `${y(b.value) - 10}px`).style("opacity", 1);
+    })
+    .on("mousemove", function (event) {
+      const [mx, my] = d3.pointer(event, container);
+      tooltip.style("left", `${mx + 14}px`).style("top", `${my - 10}px`);
+    })
+    .on("mouseleave blur", function () {
+      d3.select(this).style("opacity", 1);
+      tooltip.style("opacity", 0);
+    });
 }
