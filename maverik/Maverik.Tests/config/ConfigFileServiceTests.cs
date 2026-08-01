@@ -67,6 +67,36 @@ public class ConfigFileServiceTests : IDisposable
     }
 
     [Fact]
+    public void SaveCapabilityOverrides_ThenLoadCapabilityOverrides_RoundTrips()
+    {
+        var service = new ConfigFileService(_tempDir);
+        var data = new CapabilityOverridesFile
+        {
+            Overrides = [new CapabilityOverride { AgentId = "a1", McpServer = "github", Tool = "search_code", Description = "d" }]
+        };
+
+        service.SaveCapabilityOverrides(data);
+        var (loaded, bootstrapped) = service.LoadCapabilityOverrides();
+
+        Assert.False(bootstrapped);
+        Assert.Single(loaded.Overrides);
+        Assert.Equal("search_code", loaded.Overrides[0].Tool);
+    }
+
+    [Fact]
+    public void LoadCapabilityOverrides_BootstrapsFromExampleFile_WhenRealFileMissing()
+    {
+        File.WriteAllText(Path.Combine(_tempDir, "capability-overrides.example.json"), """{"overrides":[]}""");
+        var service = new ConfigFileService(_tempDir);
+
+        var (data, bootstrapped) = service.LoadCapabilityOverrides();
+
+        Assert.True(bootstrapped);
+        Assert.Empty(data.Overrides);
+        Assert.True(File.Exists(Path.Combine(_tempDir, "capability-overrides.json")));
+    }
+
+    [Fact]
     public void SaveSuite_ThenSuiteExists_ThenDeleteSuite_RemovesFile()
     {
         var service = new ConfigFileService(_tempDir);

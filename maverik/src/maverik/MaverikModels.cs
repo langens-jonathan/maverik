@@ -37,6 +37,13 @@ public sealed record QuestionRunResult
     // model's real context limit. Null under the same "no usage reported" convention.
     public long? PeakContextTokens { get; init; }
 
+    // Anthropic prompt-caching (see AnthropicCacheControl) — null for agents that don't opt in
+    // via AgentConfig.PromptCaching, since nothing ever sets a cache breakpoint for them.
+    // CacheReadInputTokens is already counted within InputTokens above (don't double-price it);
+    // CacheCreationInputTokens is separate (not part of InputTokens).
+    public long? CacheReadInputTokens { get; init; }
+    public long? CacheCreationInputTokens { get; init; }
+
     public string FinalAnswer { get; init; } = "";
 
     public bool Passed { get; init; }
@@ -66,7 +73,15 @@ public sealed record RunStatus(
     DateTimeOffset? StartedAt,
     DateTimeOffset? FinishedAt,
     IReadOnlyList<QuestionRunResult> Results,
-    IReadOnlyList<string> JudgedMetrics);
+    IReadOnlyList<string> JudgedMetrics,
+    // Published incrementally as MaverikRunner resolves each agent's live catalog (see
+    // CapabilityBundleBuilder) — populated before that agent's first case runs. Defaults to an
+    // empty dict (same trailing-default-via-property-redeclaration trick as SuiteRunRecord.Results
+    // below) so existing RunStatus construction call sites don't need updating.
+    IReadOnlyDictionary<string, CapabilityBundle> CapabilityBundles = null!)
+{
+    public IReadOnlyDictionary<string, CapabilityBundle> CapabilityBundles { get; init; } = CapabilityBundles ?? new Dictionary<string, CapabilityBundle>();
+}
 
 // The canonical set of metrics a run can be judged on — validated against by POST
 // /api/maverik/runs (StartRunRequest.Metrics). Purely informational: every metric is always

@@ -22,4 +22,10 @@ public sealed class ConversationStore
         {
             new(ChatRole.System, systemPrompt)
         });
+
+    // Same as above, but for a pre-built system ChatMessage — used when the agent has prompt
+    // caching enabled (see AnthropicCacheControl) and the caller already built a cache-controlled
+    // message rather than a plain string.
+    public List<ChatMessage> GetOrCreate(string sessionId, ChatMessage systemMessage) =>
+        _conversations.GetOrAdd(sessionId, _ => new List<ChatMessage> { systemMessage });
 }

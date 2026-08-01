@@ -53,7 +53,11 @@ public sealed class ChatWorker(
         var chat = models.Resolve(agent.Model);
         var strategy = loops.Resolve(agent.LoopType);
 
-        var history = conversations.GetOrCreate(job.SessionId, agent.SystemPrompt!);
+        // Cache control (see AnthropicCacheControl) is opt-in per agent, same as MaverikRunner.
+        var history = agent.PromptCaching
+            ? conversations.GetOrCreate(job.SessionId,
+                AnthropicCacheControl.BuildSystemMessage(agent.SystemPrompt!, AnthropicCacheControl.ParseTtl(agent.PromptCachingTtl)))
+            : conversations.GetOrCreate(job.SessionId, agent.SystemPrompt!);
         history.Add(new ChatMessage(ChatRole.User, job.Message));
 
         var result = await strategy.RunTurnAsync(new TurnRequest(

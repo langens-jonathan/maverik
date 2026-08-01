@@ -104,6 +104,13 @@ builder.Services.AddHostedService(sp => sp.GetRequiredService<McpServerRegistry>
 var (toolCostsFile, _) = configFiles.LoadToolCosts();
 builder.Services.AddSingleton<ToolCostRegistry>(sp => new ToolCostRegistry(toolCostsFile));
 
+// --- Capability overrides ---
+// Per-agent (mcpServer, tool) -> description overrides, used to simulate a tool-description
+// change for a controlled MAVERIK experiment without needing a live MCP server to cooperate.
+// Same pure-data, hot-reloadable pattern as tool costs above.
+var (capabilityOverridesFile, _) = configFiles.LoadCapabilityOverrides();
+builder.Services.AddSingleton<CapabilityOverrideRegistry>(sp => new CapabilityOverrideRegistry(capabilityOverridesFile));
+
 // --- Agents ---
 // AgentRegistry needs configDir so it can find each agent's prompt file
 // (config/prompts/agent/<id>.md) when the prompt isn't inline.
@@ -298,6 +305,22 @@ app.MapGet("/api/config/tool-costs", (ConfigFileService cfg) =>
 {
     var (data, bootstrapped) = cfg.LoadToolCosts();
     return Results.Ok(new { bootstrapped, data });
+});
+
+app.MapGet("/api/config/capability-overrides", (ConfigFileService cfg) =>
+{
+    var (data, bootstrapped) = cfg.LoadCapabilityOverrides();
+    return Results.Ok(new { bootstrapped, data });
+});
+
+app.MapPut("/api/config/capability-overrides", (CapabilityOverridesFile data, ConfigFileService cfg, CapabilityOverrideRegistry overrides) =>
+{
+    if (data.Overrides.Any(o => string.IsNullOrWhiteSpace(o.AgentId) || string.IsNullOrWhiteSpace(o.McpServer) || string.IsNullOrWhiteSpace(o.Tool)))
+        return Results.BadRequest(new { error = "Every capability override entry needs a non-empty agentId, mcpServer, and tool." });
+
+    cfg.SaveCapabilityOverrides(data);
+    overrides.Reload(data);
+    return Results.Ok(new { applied = true, message = (string?)null, restartRequired = false });
 });
 
 app.MapPut("/api/config/tool-costs", (ToolCostsFile data, ConfigFileService cfg, ToolCostRegistry toolCosts) =>

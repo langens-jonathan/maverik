@@ -10,6 +10,10 @@
           "title": "All metrics by agent"
         },
         {
+          "ref": "capability-by-agent",
+          "title": "Tool catalog by agent"
+        },
+        {
           "ref": "cost-vs-correctness",
           "title": "Cost vs. correctness"
         },

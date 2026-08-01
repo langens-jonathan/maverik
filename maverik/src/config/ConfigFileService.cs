@@ -41,6 +41,9 @@ public sealed class ConfigFileService
     public (ToolCostsFile Data, bool Bootstrapped) LoadToolCosts() => Load<ToolCostsFile>("tool-costs.json");
     public void SaveToolCosts(ToolCostsFile data) => Save("tool-costs.json", data);
 
+    public (CapabilityOverridesFile Data, bool Bootstrapped) LoadCapabilityOverrides() => Load<CapabilityOverridesFile>("capability-overrides.json");
+    public void SaveCapabilityOverrides(CapabilityOverridesFile data) => Save("capability-overrides.json", data);
+
     // One file per suite under maverik-suites/, unlike the single-file configs above — no
     // bootstrap-from-example (suites are real authored content, not secrets/user-specific
     // values; see MaverikSuiteRegistry for the loader that reads all of them at once).

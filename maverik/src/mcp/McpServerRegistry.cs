@@ -40,6 +40,22 @@ public sealed class McpServerRegistry(
         return tools;
     }
 
+    // Same as ToolsForServers, but keeps each tool's owning server attached — needed wherever a
+    // (server, tool) pair has to be looked up afterward (CapabilityBundleBuilder,
+    // CapabilityOverrideApplier), since a same-named tool on a different server must not collide.
+    public IReadOnlyList<(string Server, McpClientTool Tool)> ToolsForServersWithOwner(IEnumerable<string> serverNames)
+    {
+        var tools = new List<(string, McpClientTool)>();
+        foreach (var name in serverNames)
+        {
+            if (_toolsByServer.TryGetValue(name, out var serverTools))
+                tools.AddRange(serverTools.Select(t => (name, t)));
+            else
+                log.LogWarning("Agent references unknown MCP server '{Name}'; skipping.", name);
+        }
+        return tools;
+    }
+
     public async Task StartAsync(CancellationToken ct)
     {
         foreach (var config in configs)

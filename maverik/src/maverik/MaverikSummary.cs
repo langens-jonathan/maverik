@@ -17,13 +17,19 @@ public sealed record AgentSummary(
     double AvgToolCalls,
     double? AvgPeakContextTokens,
     long? MaxPeakContextTokens,
+    double? AvgCacheReadInputTokens,
+    double? AvgCacheCreationInputTokens,
     decimal? EstCostPerQuestion,
     decimal? EstCostTotal,
     decimal? EstToolCostPerQuestion,
     decimal? EstToolCostTotal,
     decimal? EstOverallCostTotal,
     int Errors,
-    int CasesWithoutUsage);
+    int CasesWithoutUsage,
+    // From RunStatus.CapabilityBundles — null only if the run predates this field (old persisted
+    // run.json) or the agent errored before its bundle was captured. See CapabilityBundle.
+    string? CapabilityDigest,
+    int? CapabilityToolCount);
 
 // Judge-model token/cost overhead across the whole run — tracked separately so it never pollutes
 // an agent's own metrics.
@@ -48,7 +54,8 @@ public static class MaverikSummaryBuilder
     {
         var agentSummaries = run.AgentIds
             .Select(agentId => BuildAgentSummary(
-                agentId, run.Results.Where(r => r.AgentId == agentId).ToList(), agents, models, mcp, toolCosts))
+                agentId, run.Results.Where(r => r.AgentId == agentId).ToList(), agents, models, mcp, toolCosts,
+                run.CapabilityBundles.GetValueOrDefault(agentId)))
             .ToList();
 
         return new RunSummary(run.RunId, agentSummaries, BuildJudgeOverhead(run, suites, models));
@@ -56,7 +63,7 @@ public static class MaverikSummaryBuilder
 
     private static AgentSummary BuildAgentSummary(
         string agentId, IReadOnlyList<QuestionRunResult> cases, AgentRegistry agents, LLMModelRegistry models,
-        McpServerRegistry mcp, ToolCostRegistry toolCosts)
+        McpServerRegistry mcp, ToolCostRegistry toolCosts, CapabilityBundle? bundle)
     {
         var agent = agents.Resolve(agentId);
 
@@ -81,14 +88,38 @@ public static class MaverikSummaryBuilder
         double? avgPeakContextTokens = withPeakContext.Count == 0 ? null : withPeakContext.Average(c => c.PeakContextTokens!.Value);
         long? maxPeakContextTokens = withPeakContext.Count == 0 ? null : withPeakContext.Max(c => c.PeakContextTokens!.Value);
 
+        // Cache tokens are null for every case unless the agent opted in (AgentConfig.PromptCaching)
+        // — same "average only over cases that have it" convention as the token averages above.
+        var withCacheRead = evaluated.Where(c => c.CacheReadInputTokens is not null).ToList();
+        double? avgCacheReadInputTokens = withCacheRead.Count == 0 ? null : withCacheRead.Average(c => c.CacheReadInputTokens!.Value);
+        var withCacheCreation = evaluated.Where(c => c.CacheCreationInputTokens is not null).ToList();
+        double? avgCacheCreationInputTokens = withCacheCreation.Count == 0 ? null : withCacheCreation.Average(c => c.CacheCreationInputTokens!.Value);
+
         decimal? estCostPerQuestion = null;
         decimal? estCostTotal = null;
         var pricing = models.ResolveConfig(agent.Model);
         if (pricing is { InputPricePerMTok: not null, OutputPricePerMTok: not null } && withUsage.Count > 0)
         {
+            // Always prices cache writes at the 5m multiplier, regardless of which TTL the agent
+            // actually configured (QuestionRunResult doesn't record per-case TTL) — a known,
+            // documented simplification; a 1h-cached agent's write cost will read slightly low.
+            var cacheMultipliers = pricing is
+            {
+                CacheReadMultiplier: { } readMul,
+                CacheWriteMultiplier: { } writeMul
+            }
+                ? (ReadMultiplier: readMul, CreationMultiplier: writeMul)
+                : ((decimal ReadMultiplier, decimal CreationMultiplier)?)null;
+
             var costs = withUsage
-                .Select(c => TokenCost(c.InputTokens!.Value, c.OutputTokens!.Value,
-                    pricing.InputPricePerMTok!.Value, pricing.OutputPricePerMTok!.Value))
+                .Select(c => cacheMultipliers is not null
+                    ? CacheAwareTokenCost(
+                        c.InputTokens!.Value, c.OutputTokens!.Value,
+                        c.CacheReadInputTokens ?? 0, c.CacheCreationInputTokens ?? 0,
+                        pricing.InputPricePerMTok!.Value, pricing.OutputPricePerMTok!.Value,
+                        cacheMultipliers.Value.ReadMultiplier, cacheMultipliers.Value.CreationMultiplier)
+                    : TokenCost(c.InputTokens!.Value, c.OutputTokens!.Value,
+                        pricing.InputPricePerMTok!.Value, pricing.OutputPricePerMTok!.Value))
                 .ToList();
             estCostPerQuestion = costs.Average();
             estCostTotal = costs.Sum();
@@ -122,9 +153,9 @@ public static class MaverikSummaryBuilder
 
         return new AgentSummary(
             agentId, passRate, avgDurationMs, avgInputTokens, avgOutputTokens, avgIterations, avgToolCalls,
-            avgPeakContextTokens, maxPeakContextTokens,
+            avgPeakContextTokens, maxPeakContextTokens, avgCacheReadInputTokens, avgCacheCreationInputTokens,
             estCostPerQuestion, estCostTotal, estToolCostPerQuestion, estToolCostTotal, estOverallCostTotal,
-            errors, casesWithoutUsage);
+            errors, casesWithoutUsage, bundle?.Digest, bundle?.ToolCount);
     }
 
     // Per-criterion judgeModel overrides aren't recorded per-case, only tokens — so the suite's
@@ -147,4 +178,20 @@ public static class MaverikSummaryBuilder
 
     internal static decimal TokenCost(long inputTokens, long outputTokens, decimal inputPricePerMTok, decimal outputPricePerMTok) =>
         inputTokens / 1_000_000m * inputPricePerMTok + outputTokens / 1_000_000m * outputPricePerMTok;
+
+    // InputTokenCount already INCLUDES cache-read tokens (see QuestionRunResult.CacheReadInputTokens)
+    // — subtract before pricing the non-cached remainder, or cache reads get double-billed at the
+    // full input rate. Cache-creation tokens are reported separately (NOT part of InputTokenCount)
+    // and priced at the write premium on top.
+    internal static decimal CacheAwareTokenCost(
+        long inputTokens, long outputTokens, long cacheReadTokens, long cacheCreationTokens,
+        decimal inputPricePerMTok, decimal outputPricePerMTok,
+        decimal cacheReadMultiplier, decimal cacheCreationMultiplier)
+    {
+        var nonCachedInput = Math.Max(0, inputTokens - cacheReadTokens);
+        return nonCachedInput / 1_000_000m * inputPricePerMTok
+             + outputTokens / 1_000_000m * outputPricePerMTok
+             + cacheReadTokens / 1_000_000m * inputPricePerMTok * cacheReadMultiplier
+             + cacheCreationTokens / 1_000_000m * inputPricePerMTok * cacheCreationMultiplier;
+    }
 }
