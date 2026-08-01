@@ -540,4 +540,27 @@ main.wide { max-width: 1360px; }
 .kv-row { display: grid; grid-template-columns: 1fr 1fr auto; gap: 0.5rem; align-items: center; margin-bottom: 0.4rem; }
 .kv-row button { padding: 0.3rem 0.55rem; font-size: 0.72rem; }
 
+/* Compare Versions page */
+.version-picker-table { width: 100%; font-size: 0.86rem; }
+.version-picker-table th { text-align: left; color: var(--muted); font-weight: 400; font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.04em; padding-bottom: 0.4rem; }
+.version-picker-table td { padding: 0.4rem 0.6rem 0.4rem 0; border-top: 1px solid var(--border-faint); }
+.version-picker-table td:first-child, .version-picker-table th:first-child { padding-left: 0.1rem; }
+.version-picker-table tr.is-baseline td { color: var(--text-strong); }
+
+.chart-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 1.1rem 1.3rem 1.3rem;
+  margin-bottom: 1.1rem;
+}
+.chart-card-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; margin-bottom: 0.7rem; }
+.chart-card-header h4 { margin: 0; color: var(--text-strong); font-size: 0.95rem; font-weight: 600; font-family: var(--font-display); }
+.chart-card-subtitle { margin: 0.2rem 0 0; color: var(--muted); font-size: 0.78rem; }
+.chart-card-actions { display: flex; gap: 0.4rem; flex-shrink: 0; }
+.chart-card-actions button { padding: 0.22rem 0.55rem; font-size: 0.7rem; }
+.chart-card-body { width: 100%; overflow-x: auto; }
+
+.empty-chart-state { display: flex; align-items: center; justify-content: center; min-height: 120px; color: var(--muted); font-size: 0.88rem; }
+
 .add-row-btn { margin-top: 0.4rem; }

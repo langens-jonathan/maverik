@@ -4,6 +4,7 @@ const TABS = [
   { to: "/reporting/reports", label: "Reports" },
   { to: "/reporting/dashboards", label: "Dashboards" },
   { to: "/reporting/visualizations", label: "Visualizations" },
+  { to: "/reporting/compare", label: "Compare versions" },
 ];
 
 export function ReportingPage() {

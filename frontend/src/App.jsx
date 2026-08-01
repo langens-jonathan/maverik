@@ -64,18 +64,21 @@ function DevModeToggle() {
   );
 }
 
-// The report "Open" screen (/reporting/reports/:id, not .../configure or .../new) is the one
-// page that wants more than the standard 900px column — it lays visualizations out two-per-row.
-// Every other page keeps the narrower width main normally gets.
-function useIsReportView() {
+// The report "Open" screen (/reporting/reports/:id, not .../configure or .../new) and the
+// Compare Versions page both want more than the standard 900px column — the former lays
+// visualizations out two-per-row, the latter stacks several full-width comparison charts. Every
+// other page keeps the narrower width main normally gets.
+function useIsWideMain() {
   const { pathname } = useLocation();
   const segments = pathname.split("/").filter(Boolean);
-  return segments[0] === "reporting" && segments[1] === "reports" && segments.length === 3 && segments[2] !== "new";
+  if (segments[0] !== "reporting") return false;
+  if (segments[1] === "reports") return segments.length === 3 && segments[2] !== "new";
+  return segments[1] === "compare";
 }
 
 export default function App() {
   const [theme, setTheme] = useTheme();
-  const isReportView = useIsReportView();
+  const isWideMain = useIsWideMain();
 
   return (
     <>
@@ -117,7 +120,7 @@ export default function App() {
           </select>
         </div>
       </header>
-      <main className={isReportView ? "wide" : undefined}>
+      <main className={isWideMain ? "wide" : undefined}>
         <Outlet />
       </main>
     </>
