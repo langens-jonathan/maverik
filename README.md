@@ -10,12 +10,12 @@
 ![Docker](https://img.shields.io/badge/docker-ready-2496ED)
 
 [Quick start](#-quick-start) · [Frontend](#-frontend) · [Define a suite](#-defining-a-test-suite) ·
-[Run a benchmark](#-running-a-benchmark) · [Metrics](#-metrics) · [API](#-api-reference) ·
+[Run a benchmark](#-running-a-benchmark) · [Metrics](#-metrics) · [API](#-api-reference) ![Unused MCP Tools cost you money!](https://dev.to/langensjonathan/do-unused-mcp-tools-cost-you-money-2gnb) ·
 [Roadmap](#-roadmap)
 
 ![Agent Comparison report — pass rate, cost, and token/duration breakdowns for two agent configurations side by side](docs/screenshots/agent-comparison-report.png)
 
-![Unused MCP Tools cost you money!](https://dev.to/langensjonathan/do-unused-mcp-tools-cost-you-money-2gnb)
+
 
 </div>
 
