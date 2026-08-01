@@ -1,20 +1,11 @@
 <div align="center">
 
-```
-███╗   ███╗ █████╗ ██╗   ██╗███████╗██████╗ ██╗██╗  ██╗
-████╗ ████║██╔══██╗██║   ██║██╔════╝██╔══██╗██║██║ ██╔╝
-██╔████╔██║███████║██║   ██║█████╗  ██████╔╝██║█████╔╝ 
-██║╚██╔╝██║██╔══██║╚██╗ ██╔╝██╔══╝  ██╔══██╗██║██╔═██╗ 
-██║ ╚═╝ ██║██║  ██║ ╚████╔╝ ███████╗██║  ██║██║██║  ██╗
-╚═╝     ╚═╝╚═╝  ╚═╝  ╚═══╝  ╚══════╝╚═╝  ╚═╝╚═╝╚═╝  ╚═╝
-```
+<h1>Maverik</h1>
 
 **Benchmark, compare, and cost-predict your MCP agents.**
 
 *Think JMeter — but for agents built on the Model Context Protocol.*
 
-![.NET 9](https://img.shields.io/badge/.NET-9.0-512BD4)
-![ASP.NET Core](https://img.shields.io/badge/ASP.NET%20Core-minimal%20API-blue)
 ![MCP](https://img.shields.io/badge/protocol-MCP-orange)
 ![Docker](https://img.shields.io/badge/docker-ready-2496ED)
 
@@ -23,6 +14,8 @@
 [Roadmap](#-roadmap)
 
 ![Agent Comparison report — pass rate, cost, and token/duration breakdowns for two agent configurations side by side](docs/screenshots/agent-comparison-report.png)
+
+![Unused MCP Tools cost you money!](https://dev.to/langensjonathan/do-unused-mcp-tools-cost-you-money-2gnb)
 
 </div>
 
