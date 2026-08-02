@@ -138,6 +138,27 @@
   --radius: 6px;
 }
 
+/* Toggled on <html> only for the duration of a PDF export (reportExport.js's renderElementToPdf,
+   via [data-pdf-export]) — every dark theme's near-black bg/surface would otherwise get
+   rasterized straight into the PDF, which is heavy on ink/toner and can look muddy on a
+   lower-quality printer. Overrides only the "chrome" tokens (background/surface/border/text) to a
+   light, low-ink set; every data/status color (accent, ok/bad/warn/info, and the categorical
+   chart palette in core/palette.js) is deliberately left alone — those already read fine on
+   export and carry real meaning, so they aren't part of this. Same specificity as the
+   `[data-theme="..."]` blocks above (one attribute selector each) — this must stay textually
+   after all of them so it wins the cascade regardless of which theme is active underneath it. */
+[data-pdf-export] {
+  --bg: #ffffff;
+  --surface: #ffffff;
+  --surface-raised: #f4f4f5;
+  --border: #d4d4d8;
+  --border-faint: #e4e4e7;
+  --text: #27272a;
+  --text-strong: #09090b;
+  --muted: #71717a;
+  --track: #e4e4e7;
+}
+
 * { box-sizing: border-box; }
 
 body {
