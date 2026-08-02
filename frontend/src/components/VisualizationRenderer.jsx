@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import * as d3 from "d3";
 import { api } from "../api.js";
-import { exportSvgAsPng, exportSvgAsSvg } from "../charts/core/export.js";
+import { exportSvgAsPng, exportSvgAsSvg, exportElementAsPng } from "../charts/core/export.js";
 import { readTheme } from "../charts/core/theme.js";
 import { createChartSvg } from "../charts/core/svgFrame.js";
 import { createTooltip } from "../charts/core/tooltip.js";
@@ -62,11 +62,15 @@ export function VisualizationRenderer({ id, data, title, fullWidth = 720, halfWi
   const [error, setError] = useState(null);
   const [layout, setLayout] = useState("half");
   const [hasSvg, setHasSvg] = useState(false);
+  const [hasTable, setHasTable] = useState(false);
+  const [exporting, setExporting] = useState(false);
+  const [exportError, setExportError] = useState(null);
 
   useEffect(() => {
     let cancelled = false;
     setError(null);
     setHasSvg(false);
+    setHasTable(false);
     const container = containerRef.current;
     if (container) container.innerHTML = "";
 
@@ -77,10 +81,15 @@ export function VisualizationRenderer({ id, data, title, fullWidth = 720, halfWi
           throw new Error(`'${id}' has no default export function.`);
         setLayout(mod.layout === "full" ? "full" : "half");
         mod.default(container, data, { d3, fullWidth, halfWidth, chartKit });
-        // Table-shaped visualizations render no root <svg> — export only makes sense for the
-        // chart-shaped ones, same distinction ChartCard never has to make (every bespoke chart is
-        // guaranteed to render exactly one <svg>, but a sandboxed file might build a <table>).
-        if (!cancelled) setHasSvg(!!container?.querySelector("svg"));
+        if (cancelled) return;
+        // A chart-shaped visualization is guaranteed to render exactly one <svg> (the toolkit's
+        // own rule — see docs/chart-design-system.md), so that's exported verbatim/rasterized the
+        // same way ChartCard does. A table-shaped one (layout = "full", a plain <table>, no <svg>
+        // to work with) falls back to exportElementAsPng's html2canvas rasterization instead — no
+        // SVG option for those, since an HTML table has no natural vector-graphics form.
+        const svg = container?.querySelector("svg");
+        setHasSvg(!!svg);
+        setHasTable(!svg && !!container?.querySelector("table"));
       })
       .catch((err) => {
         if (!cancelled) setError(err.message || String(err));
@@ -91,28 +100,44 @@ export function VisualizationRenderer({ id, data, title, fullWidth = 720, halfWi
     };
   }, [id, data, fullWidth, halfWidth]);
 
-  function handleExport(kind) {
-    const svg = containerRef.current?.querySelector("svg");
-    if (!svg) return;
+  async function handleExport(kind) {
     const background = getComputedStyle(containerRef.current).getPropertyValue("--surface").trim() || "#fff";
-    const name = `${id}.${kind}`;
-    if (kind === "svg") exportSvgAsSvg(svg, name, { background });
-    else exportSvgAsPng(svg, name, { background });
+    const svg = containerRef.current?.querySelector("svg");
+    if (svg) {
+      const name = `${id}.${kind}`;
+      if (kind === "svg") exportSvgAsSvg(svg, name, { background });
+      else exportSvgAsPng(svg, name, { background });
+      return;
+    }
+    const table = containerRef.current?.querySelector("table");
+    if (table && kind === "png") {
+      setExportError(null);
+      setExporting(true);
+      try {
+        await exportElementAsPng(table, `${id}.png`, { background });
+      } catch (err) {
+        setExportError(err.message || String(err));
+      } finally {
+        setExporting(false);
+      }
+    }
   }
 
   return (
     <div className={`visualization layout-${layout}`}>
-      {(title || hasSvg) && (
+      {(title || hasSvg || hasTable) && (
         <div className="visualization-header">
           {title && <p className="field-hint">{title}</p>}
-          {hasSvg && (
+          {(hasSvg || hasTable) && (
             <div className="chart-card-actions">
-              <button className="secondary" onClick={() => handleExport("png")}>
-                PNG
+              <button className="secondary" onClick={() => handleExport("png")} disabled={exporting}>
+                {exporting ? "Exporting…" : "PNG"}
               </button>
-              <button className="secondary" onClick={() => handleExport("svg")}>
-                SVG
-              </button>
+              {hasSvg && (
+                <button className="secondary" onClick={() => handleExport("svg")}>
+                  SVG
+                </button>
+              )}
             </div>
           )}
         </div>
@@ -122,6 +147,11 @@ export function VisualizationRenderer({ id, data, title, fullWidth = 720, halfWi
           <span>
             Error rendering &lsquo;{id}&rsquo;: {error}
           </span>
+        </div>
+      )}
+      {exportError && (
+        <div className="notice bad">
+          <span>Export failed: {exportError}</span>
         </div>
       )}
       <div ref={containerRef} className="visualization-container" />

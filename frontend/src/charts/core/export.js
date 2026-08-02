@@ -1,13 +1,16 @@
-// Per-chart PNG/SVG export — the generic mechanism every chart module's export button goes
-// through (see components/ChartCard.jsx, the one caller). Every chart renders one root <svg>
-// containing its own title/axis labels/legend, so exporting that node — verbatim for SVG, or
-// rasterized for PNG — is enough to make the image self-contained out of context.
+// Per-visualization PNG/SVG export — the generic mechanism every chart module's export button
+// goes through (see components/ChartCard.jsx and components/VisualizationRenderer.jsx, the two
+// callers). Every *chart* renders one root <svg> containing its own title/axis labels/legend, so
+// exporting that node — verbatim for SVG, or rasterized for PNG — is enough to make the image
+// self-contained out of context; exportElementAsPng below is the separate fallback for a
+// table-shaped visualization, which has no <svg> to work with at all.
 //
-// The one non-trivial part: a downloaded file has no access to this app's stylesheet, so every
-// element's *actually-applied* colors/fonts (most of which are set via `var(--x)` so charts stay
-// theme-live on screen) have to be baked into inline style/attribute values on a clone before
-// serializing. Walking getComputedStyle per node is the only reliable way to do that — there's no
-// API that resolves custom-property-driven attr()/style() values into a portable stylesheet.
+// The one non-trivial part of the SVG path: a downloaded file has no access to this app's
+// stylesheet, so every element's *actually-applied* colors/fonts (most of which are set via
+// `var(--x)` so charts stay theme-live on screen) have to be baked into inline style/attribute
+// values on a clone before serializing. Walking getComputedStyle per node is the only reliable way
+// to do that — there's no API that resolves custom-property-driven attr()/style() values into a
+// portable stylesheet.
 import { triggerDownload } from "../../reportExport.js";
 
 const STYLE_PROPS = [
@@ -71,4 +74,21 @@ export async function exportSvgAsPng(svgEl, filename, { scale = 2, background } 
   } finally {
     URL.revokeObjectURL(url);
   }
+}
+
+// The fallback for a visualization that isn't fundamentally a plot — a table-shaped sandboxed
+// visualization (config/reporting/visualizations/*.js, see components/VisualizationRenderer.jsx)
+// renders a plain <table>, not an <svg>, so the two functions above (which only know how to
+// rasterize/serialize an <svg> node) can't export it. html2canvas rasterizes arbitrary DOM
+// instead, at the cost of needing a real (if brief) render pass rather than the instant
+// canvas-drawImage trick exportSvgAsPng uses. No SVG-export equivalent exists for this case
+// deliberately: an HTML table has no natural vector-graphics representation, so
+// VisualizationRenderer only ever offers PNG for a table-shaped visualization, never SVG.
+// Dynamically imports html2canvas (~200KB) so it never loads unless a table is actually exported
+// — every chart-shaped visualization's export never touches this function or that import.
+export async function exportElementAsPng(element, filename, { scale = 2, background } = {}) {
+  const { default: html2canvas } = await import("html2canvas");
+  const canvas = await html2canvas(element, { backgroundColor: background || null, scale, useCORS: true });
+  const blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/png"));
+  triggerDownload(blob, filename);
 }

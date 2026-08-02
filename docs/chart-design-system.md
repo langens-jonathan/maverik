@@ -58,6 +58,13 @@ height before anything is in the DOM to measure — see `core/legend.js`'s own d
 once a chart's series count isn't a small fixed list (e.g. one line per agent in
 `runs-over-time-*.js`, below); a short, fixed-size legend can ignore it entirely.
 
+`core/export.js`'s two SVG-based functions (`exportSvgAsSvg`/`exportSvgAsPng`) are what every
+chart-shaped visualization's PNG/SVG buttons go through. A third, `exportElementAsPng`, is the
+fallback for a table-shaped one (a plain `<table>`, no `<svg>` to serialize/rasterize) — it
+rasterizes the table's DOM via a lazily-imported `html2canvas` instead. There's no SVG-export
+equivalent for a table on purpose: an HTML table has no natural vector-graphics form, so
+`VisualizationRenderer.jsx` only ever offers PNG for one — see its `hasTable` branch.
+
 ### Bridging into the sandboxed visualization system
 
 `config/reporting/visualizations/*.js` (see `config/reporting/README.md`) can never `import`
