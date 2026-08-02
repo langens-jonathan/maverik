@@ -136,14 +136,24 @@ Rules:
   manages its own re-render via a local `redraw()` closure, the same pattern the sandboxed
   `cost-vs-correctness.js` established for its legend collapse button; it still starts from a
   fully-cleared sub-container each time.
-- **Bake the title, subtitle, and any legend into the SVG itself**, not just the surrounding
-  `ChartCard` header — see "Export requirements" below.
+- **Bake the title, subtitle, and any legend into the SVG itself.** This is the *only* place they
+  appear once the chart has rendered — `ChartCard`'s own HTML header only shows the `title` prop as
+  a fallback before an `<svg>` exists (loading, or a `showEmptyState` message), and never renders a
+  subtitle at all. Two chart-specific texts stacked on top of each other (a static page-level
+  caption above, the chart's own — often more accurate/state-aware — subtitle below) used to be a
+  real duplication bug on Compare Versions; don't reintroduce it by treating the `title`/`subtitle`
+  props passed to `<ChartCard>` as if they're always shown. If a page-level caption said something
+  the chart's own subtitle didn't (an interaction hint, an encoding legend, a metric-specific
+  note), fold it into that chart module's own subtitle text instead — see `regressionMatrix.js`
+  ("click a cell to open its case"), `paretoScatter.js` ("dashed line = efficient frontier"), or
+  `distributionStrip.js`'s per-metric `note` field for worked examples.
 - **Handle `!data.baseline` (and "baseline present but zero usable data points") explicitly** —
   see "Empty, loading, and single-selection states."
 
 `ChartCard` is the one host. It supplies `container`, calls `render(node, data, readTheme(node))`,
-and renders the PNG/SVG export buttons plus a title/subtitle in its own header (in HTML, outside
-the SVG — that header is for on-screen navigation, not part of what gets exported).
+tracks whether an `<svg>` exists, and renders the PNG/SVG export buttons plus a `title`-only
+fallback header (in HTML, outside the SVG, shown only while `!hasSvg`) — the `subtitle` prop no
+longer exists on `ChartCard`; a chart's own SVG subtitle is the sole subtitle anywhere.
 
 ## Theming contract
 
@@ -267,8 +277,10 @@ reality rather than around what looks smoothest:
    using/extending `comparison/links.js` — see "Cross-navigation" above. Not every chart needs
    this; skip it if there's nothing sensible to link to.
 8. Wire it into `CompareVersionsPage.jsx` (or whatever page you're building) via a `<ChartCard
-   title=... subtitle=... filename=... data={chartData} render={renderYourChart} />`. `filename`
-   should be unique and descriptive — it's the downloaded file's base name.
+   title=... filename=... data={chartData} render={renderYourChart} />`. `filename` should be
+   unique and descriptive — it's the downloaded file's base name. There's no `subtitle` prop —
+   your module's own `createChartSvg({..., subtitle: "..."})` call is the only subtitle anyone
+   sees; see the "title, subtitle, and any legend" rule above.
 9. Verify against real data before calling it done — this toolkit's charts were all checked by
    replicating each chart's pure-JS math in Node against real `/api/maverik/suite-runs` output,
    not just eyeballed. A chart that can't be verified this way at all is a signal its logic

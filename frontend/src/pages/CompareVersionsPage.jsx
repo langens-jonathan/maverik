@@ -249,7 +249,6 @@ export function CompareVersionsPage() {
       {chartData && (
         <ChartCard
           title={DELTA_HEADER_TITLE}
-          subtitle="Baseline vs. every selected candidate, five headline metrics, with per-repetition spread where it exists."
           filename={`delta-header-${agentId}`}
           data={chartData}
           render={renderDeltaHeader}
@@ -259,7 +258,6 @@ export function CompareVersionsPage() {
       {chartData && (
         <ChartCard
           title={RELIABILITY_TITLE}
-          subtitle="Error rate and iteration-limit-hit rate, baseline vs. candidates — the headline metrics above don't cover whether a version got less reliable."
           filename={`reliability-delta-${agentId}`}
           data={chartData}
           render={renderReliabilityDelta}
@@ -269,7 +267,6 @@ export function CompareVersionsPage() {
       {chartData && (
         <ChartCard
           title={PARETO_TITLE}
-          subtitle="Which version to ship — cost vs. pass rate, sized by duration, efficient set on the frontier."
           filename={`pareto-scatter-${agentId}`}
           data={chartData}
           render={renderParetoScatter}
@@ -279,7 +276,6 @@ export function CompareVersionsPage() {
       {chartData && (
         <ChartCard
           title={MATRIX_TITLE}
-          subtitle="The pre-ship safety check — every question, every selected version, sortable, with a diff-vs-baseline mode. Click a cell to open that case in its run."
           filename={`regression-matrix-${agentId}`}
           data={chartData}
           render={renderRegressionMatrix}
@@ -289,7 +285,6 @@ export function CompareVersionsPage() {
       {chartData && (
         <ChartCard
           title={ITERATION_BUDGET_TITLE}
-          subtitle="Avg iterations used vs. each version's own configured max — a near-miss signal before a version ever actually hits its limit."
           filename={`iteration-budget-${agentId}`}
           data={chartData}
           render={renderIterationBudget}
@@ -304,35 +299,30 @@ export function CompareVersionsPage() {
         <div className="viz-row">
           <ChartCard
             title={renderDurationStrip.TITLE}
-            subtitle="Every repetition's wall-clock duration, honest at any n."
             filename={`duration-strip-${agentId}`}
             data={chartData}
             render={renderDurationStrip}
           />
           <ChartCard
             title={renderInputTokensStrip.TITLE}
-            subtitle="Per-repetition input token counts — usually the most deterministic metric here."
             filename={`input-tokens-strip-${agentId}`}
             data={chartData}
             render={renderInputTokensStrip}
           />
           <ChartCard
             title={renderOutputTokensStrip.TITLE}
-            subtitle="Per-repetition output token counts."
             filename={`output-tokens-strip-${agentId}`}
             data={chartData}
             render={renderOutputTokensStrip}
           />
           <ChartCard
             title={renderCostStrip.TITLE}
-            subtitle="Per-repetition cost (token + tool), same spread-not-average honesty as the other strips."
             filename={`cost-strip-${agentId}`}
             data={chartData}
             render={renderCostStrip}
           />
           <ChartCard
             title={renderContextStrip.TITLE}
-            subtitle="Per-repetition peak context tokens — how close a version gets to the model's context limit."
             filename={`context-strip-${agentId}`}
             data={chartData}
             render={renderContextStrip}
@@ -343,7 +333,6 @@ export function CompareVersionsPage() {
       {chartData && (
         <ChartCard
           title={TOOL_FLOW_TITLE}
-          subtitle="Grouped bar, not a Sankey — one agent's versions rarely have enough distinct tool paths to earn one. Reveals behavioral drift in which tools get called."
           filename={`tool-usage-flow-${agentId}`}
           data={chartData}
           render={renderToolUsageFlow}

@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { exportSvgAsPng, exportSvgAsSvg } from "../charts/core/export.js";
 import { readTheme } from "../charts/core/theme.js";
 
@@ -9,14 +9,24 @@ import { readTheme } from "../charts/core/theme.js";
 // one root <svg> (that's what gets exported) and clear+redraw from scratch on every call — this
 // component clears `container` before each call, so a module never has to guard against stale
 // children from a previous render.
-export function ChartCard({ title, subtitle, filename, data, render, deps }) {
+//
+// The `<h4>{title}</h4>` here only shows before an <svg> exists (loading, or a `showEmptyState`
+// message — both render as plain HTML, not an svg, so hasSvg stays false). Once a chart mounts,
+// its own title+subtitle are already baked into the SVG itself (required for self-contained
+// PNG/SVG export, see docs/chart-design-system.md's "Export requirements") — that text is usually
+// more accurate than a static caption here (several charts' SVG subtitle is state-aware, e.g.
+// "Baseline: v1 vs. 3 candidates"), so this component deliberately doesn't render its own subtitle
+// at all — a second, different caption stacked above the chart's own was pure duplication.
+export function ChartCard({ title, filename, data, render, deps }) {
   const containerRef = useRef(null);
+  const [hasSvg, setHasSvg] = useState(false);
 
   useEffect(() => {
     const node = containerRef.current;
     if (!node) return;
     node.replaceChildren();
     render(node, data, readTheme(node));
+    setHasSvg(!!node.querySelector("svg"));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, deps ?? [data]);
 
@@ -32,10 +42,7 @@ export function ChartCard({ title, subtitle, filename, data, render, deps }) {
   return (
     <div className="chart-card">
       <div className="chart-card-header">
-        <div>
-          <h4>{title}</h4>
-          {subtitle && <p className="chart-card-subtitle">{subtitle}</p>}
-        </div>
+        <div>{!hasSvg && <h4>{title}</h4>}</div>
         <div className="chart-card-actions">
           <button className="secondary" onClick={() => handleExport("png")}>
             PNG

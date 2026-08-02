@@ -22,16 +22,21 @@ import { beeswarm } from "./core/beeswarm.js";
 import { createTooltip } from "./core/tooltip.js";
 import { showEmptyState } from "./core/emptyState.js";
 
+// `note` is metric-specific context the shared subtitle below can't express on its own (every
+// distribution strip shares one render function, so without this the subtitle would read
+// identically across all five) — appended to the generic "own point" explanation at render time.
 const METRIC_DEFS = {
   durationMs: {
     label: "Duration",
     format: (v) => (v >= 1000 ? `${(v / 1000).toFixed(1)}s` : `${Math.round(v)}ms`),
     get: (c) => c.durationMs,
+    note: "honest at any n, including n=1",
   },
   inputTokens: {
     label: "Input tokens",
     format: (v) => Math.round(v).toLocaleString(),
     get: (c) => c.inputTokens,
+    note: "usually the most deterministic metric here",
   },
   outputTokens: {
     label: "Output tokens",
@@ -42,11 +47,13 @@ const METRIC_DEFS = {
     label: "Cost",
     format: (v) => `$${v.toFixed(4)}`,
     get: (c) => (c.estCost == null && c.estToolCost == null ? null : (c.estCost ?? 0) + (c.estToolCost ?? 0)),
+    note: "token + tool cost combined",
   },
   peakContextTokens: {
     label: "Peak context tokens",
     format: (v) => Math.round(v).toLocaleString(),
     get: (c) => c.peakContextTokens,
+    note: "how close a version gets to the model's context limit",
   },
 };
 
@@ -78,7 +85,8 @@ export function makeDistributionStrip(metricKey) {
     const headerH = 56;
     const margin = { right: 20 };
     const height = headerH + points.length * laneH + 24;
-    const subtitle = "Every repetition as its own point — a tight cluster is consistency, a wide one is noise";
+    const subtitle = "Every repetition as its own point — a tight cluster is consistency, a wide one is noise"
+      + (def.note ? ` · ${def.note}` : "");
 
     const { svg, width } = createChartSvg(container, { minWidth: 480, height, title: TITLE, subtitle }, theme);
 

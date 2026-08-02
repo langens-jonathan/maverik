@@ -573,7 +573,6 @@ tr.is-highlighted { background: var(--accent-wash); box-shadow: inset 3px 0 0 va
 }
 .chart-card-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; margin-bottom: 0.7rem; }
 .chart-card-header h4 { margin: 0; color: var(--text-strong); font-size: 0.95rem; font-weight: 600; font-family: var(--font-display); }
-.chart-card-subtitle { margin: 0.2rem 0 0; color: var(--muted); font-size: 0.78rem; }
 .chart-card-actions { display: flex; gap: 0.4rem; flex-shrink: 0; }
 .chart-card-actions button { padding: 0.22rem 0.55rem; font-size: 0.7rem; }
 .chart-card-body { width: 100%; overflow-x: auto; }

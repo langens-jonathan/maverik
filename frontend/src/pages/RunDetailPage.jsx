@@ -236,7 +236,6 @@ export function RunDetailPage() {
       {chartAgents.length > 0 && (
         <ChartCard
           title={CRITERION_TITLE}
-          subtitle="Which kind of check this run's failures cluster on."
           filename={`criterion-outcomes-${run.runId}`}
           data={{ agents: chartAgents, criteriaByQuestionId }}
           render={renderCriterionOutcomes}
@@ -246,7 +245,6 @@ export function RunDetailPage() {
       {chartAgents.length > 0 && (
         <ChartCard
           title={TOOL_PROFILE_TITLE}
-          subtitle="Which tools this run actually reached for."
           filename={`tool-usage-profile-${run.runId}`}
           data={{ agents: chartAgents }}
           render={renderToolUsageProfile}
@@ -256,7 +254,6 @@ export function RunDetailPage() {
       {costSplitData && (
         <ChartCard
           title={COST_SPLIT_TITLE}
-          subtitle="Evaluation overhead vs. agent work, split out of one combined total."
           filename={`cost-split-${run.runId}`}
           data={costSplitData}
           render={renderCostSplit}

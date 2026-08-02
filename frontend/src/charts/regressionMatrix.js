@@ -151,8 +151,8 @@ export default function render(container, data, theme) {
     const rowH = 36;
     const height = headerH + rows.length * rowH + 12;
     const subtitle = state.diffMode
-      ? "Diff vs. baseline — only changed cells are colored"
-      : "Pass fraction per question, across repetitions";
+      ? "Diff vs. baseline — only changed cells are colored · click a cell to open its case"
+      : "Pass fraction per question, across repetitions · click a cell to open its case";
 
     const { svg, width } = createChartSvg(svgHost.node(), { minWidth: 480, height, title: TITLE, subtitle }, theme);
     const colW = Math.max(76, (width - labelColW) / points.length);

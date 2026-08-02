@@ -68,7 +68,7 @@ export default function render(container, data, theme) {
 
   const height = 380;
   const margin = { top: 56, right: 28, bottom: 44, left: 56 };
-  const subtitle = "Bubble size = avg duration · muted points are cost/correctness-dominated by another version";
+  const subtitle = "Which version to ship · bubble size = avg duration · dashed line = efficient frontier · muted points are dominated by another version";
 
   const { svg, width } = createChartSvg(container, { minWidth: 560, height, title: TITLE, subtitle, subtitleY: 40 }, theme);
 

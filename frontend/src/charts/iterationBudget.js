@@ -47,7 +47,7 @@ export default function render(container, data, theme) {
 
   const height = 300;
   const margin = { top: 56, right: 20, bottom: 44, left: 52 };
-  const subtitle = "Avg iterations used / that version's configured max — each point uses its own budget";
+  const subtitle = "Avg iterations / each version's own configured max — a near-miss signal before a version ever actually hits its limit";
   const BAR_MAX_WIDTH = 56;
 
   const { svg, width } = createChartSvg(container, { minWidth: 460, height, title: TITLE, subtitle, subtitleY: 40 }, theme);
