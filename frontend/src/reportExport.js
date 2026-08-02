@@ -48,10 +48,14 @@ export function exportReportCsv(report, runs) {
   triggerDownload(blob, `${report.id}-${new Date().toISOString().slice(0, 10)}.csv`);
 }
 
-// Renders `element` (the report's title + every dashboard card, not the app chrome around it) to
-// a raster image via html2canvas and slices it across A4 pages via jsPDF. Dynamically imported by
-// the caller so these two libraries (~350KB together) never load unless someone actually exports.
-export async function exportReportPdf(report, element) {
+// Renders `element` to a raster image via html2canvas and slices it across A4 pages via jsPDF,
+// returning the jsPDF document unsaved — callers pick their own filename via `.save(...)`.
+// Dynamically imports both libraries (~350KB together) so they never load unless someone actually
+// exports. Shared by the report "Open" screen (below) and Compare Versions
+// (`charts/comparison/export.js`) — the html2canvas/jsPDF slicing has two real gotchas (JPEG not
+// PNG, a stable `alias` for reuse across pages) worth having exactly once rather than re-derived
+// per page that wants a PDF export.
+export async function renderElementToPdf(element) {
   const [{ default: html2canvas }, { jsPDF }] = await Promise.all([import("html2canvas"), import("jspdf")]);
 
   const backgroundColor = getComputedStyle(document.body).backgroundColor || "#ffffff";
@@ -68,7 +72,7 @@ export async function exportReportPdf(report, element) {
   // (only the y-offset changes per page); passing a stable alias tells jsPDF to embed it once and
   // reuse it, instead of re-embedding the whole image per page.
   const imgData = canvas.toDataURL("image/jpeg", 0.92);
-  const alias = "report-page-image";
+  const alias = "export-page-image";
 
   let heightLeft = imgHeight;
   let position = 0;
@@ -82,5 +86,12 @@ export async function exportReportPdf(report, element) {
     heightLeft -= pageHeight;
   }
 
+  return pdf;
+}
+
+// Renders `element` (the report's title + every dashboard card, not the app chrome around it) to
+// a PDF and saves it under the report's own id.
+export async function exportReportPdf(report, element) {
+  const pdf = await renderElementToPdf(element);
   pdf.save(`${report.id}-${new Date().toISOString().slice(0, 10)}.pdf`);
 }

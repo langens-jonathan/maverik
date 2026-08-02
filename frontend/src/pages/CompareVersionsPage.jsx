@@ -1,9 +1,11 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { api } from "../api.js";
 import { ChartCard } from "../components/ChartCard.jsx";
+import { ExportMenu } from "../components/ExportMenu.jsx";
 import { colorForIndex } from "../charts/comparison/palette.js";
 import { agentConfigHref } from "../charts/comparison/links.js";
+import { exportCompareCsv, exportComparePdf } from "../charts/comparison/pageExport.js";
 import renderDeltaHeader, { TITLE as DELTA_HEADER_TITLE } from "../charts/deltaHeader.js";
 import renderReliabilityDelta, { TITLE as RELIABILITY_TITLE } from "../charts/reliabilityDelta.js";
 import renderParetoScatter, { TITLE as PARETO_TITLE } from "../charts/paretoScatter.js";
@@ -38,6 +40,10 @@ export function CompareVersionsPage() {
 
   const [baselineVersion, setBaselineVersion] = useState(undefined);
   const [candidateVersions, setCandidateVersions] = useState(new Set());
+
+  const [exporting, setExporting] = useState(false); // false | a status string while an export runs
+  const [exportError, setExportError] = useState(null);
+  const contentRef = useRef(null);
 
   useEffect(() => {
     Promise.all([api.listSuites(), api.listAgents(), api.getToolCostsConfig()])
@@ -144,6 +150,7 @@ export function CompareVersionsPage() {
         version: baselinePoint.version,
         sourceRunId: baselinePoint.sourceRunId,
         agentSnapshot: baselinePoint.agentSnapshot,
+        timestamp: baselinePoint.timestamp,
         summary: baselinePoint.summary,
         results: baselinePoint.results,
       },
@@ -152,6 +159,7 @@ export function CompareVersionsPage() {
         version: p.version,
         sourceRunId: p.sourceRunId,
         agentSnapshot: p.agentSnapshot,
+        timestamp: p.timestamp,
         color: colorForIndex(i),
         summary: p.summary,
         results: p.results,
@@ -162,182 +170,213 @@ export function CompareVersionsPage() {
 
   if (loadError) return <p className="error-text">Failed to load: {loadError}</p>;
 
+  async function handleExportCsv() {
+    setExportError(null);
+    setExporting("Exporting…");
+    try {
+      exportCompareCsv(suiteId, agentId, chartData);
+    } catch (err) {
+      setExportError(err.message || String(err));
+    } finally {
+      setExporting(false);
+    }
+  }
+
+  async function handleExportPdf() {
+    setExportError(null);
+    setExporting("Generating PDF…");
+    try {
+      await exportComparePdf(agentId, contentRef.current);
+    } catch (err) {
+      setExportError(err.message || String(err));
+    } finally {
+      setExporting(false);
+    }
+  }
+
   return (
     <div>
-      <h2>Compare versions</h2>
-      <p className="muted">
-        Pick one agent and a set of its cut versions to compare — one baseline, any number of candidates, all
-        benchmarked against the same suite.
-      </p>
-
-      <div className="card">
-        <div className="field-row">
-          <div>
-            <label>Suite</label>
-            <select value={suiteId} onChange={(e) => setSuiteId(e.target.value)}>
-              {suites.map((s) => (
-                <option key={s.id} value={s.id}>
-                  {s.name || s.id}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <label>Agent</label>
-            <select value={agentId} onChange={(e) => setAgentId(e.target.value)} disabled={agentIds.length === 0}>
-              {agentIds.length === 0 && <option value="">No recorded runs for this suite yet</option>}
-              {agentIds.map((id) => (
-                <option key={id} value={id}>
-                  {agentsById[id]?.name || id}
-                </option>
-              ))}
-            </select>
-          </div>
-        </div>
-
-        {records === null ? (
-          <p className="muted">Loading…</p>
-        ) : points.length === 0 ? (
-          <p className="muted">No recorded runs for this suite/agent yet — run the suite first.</p>
-        ) : (
-          <>
-            <label>Versions</label>
-            <table className="version-picker-table">
-              <thead>
-                <tr>
-                  <th>Baseline</th>
-                  <th>Candidate</th>
-                  <th>Version</th>
-                  <th>Last run</th>
-                  <th>Pass rate</th>
-                </tr>
-              </thead>
-              <tbody>
-                {points.map((p) => (
-                  <tr key={p.version ?? "current"} className={p.version === baselineVersion ? "is-baseline" : undefined}>
-                    <td>
-                      <input
-                        type="radio"
-                        name="baseline"
-                        checked={p.version === baselineVersion}
-                        onChange={() => setBaseline(p.version)}
-                      />
-                    </td>
-                    <td>
-                      <input
-                        type="checkbox"
-                        checked={candidateVersions.has(p.version) && p.version !== baselineVersion}
-                        disabled={p.version === baselineVersion}
-                        onChange={() => toggleCandidate(p.version)}
-                      />
-                    </td>
-                    <td className="mono">
-                      <Link to={agentConfigHref(agentId, p.version)} title="Open this version in the agent config editor">
-                        {pointLabel(p.version)}
-                      </Link>
-                    </td>
-                    <td className="mono">{fmtTimestamp(p.timestamp)}</td>
-                    <td className="mono">{Math.round(p.summary.passRate * 100)}%</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </>
-        )}
+      <div className="report-view-header">
+        {exportError && <p className="error-text">Export failed: {exportError}</p>}
+        {chartData && <ExportMenu onExportCsv={handleExportCsv} onExportPdf={handleExportPdf} busy={exporting} />}
       </div>
 
-      {chartData && (
-        <ChartCard
-          title={DELTA_HEADER_TITLE}
-          filename={`delta-header-${agentId}`}
-          data={chartData}
-          render={renderDeltaHeader}
-        />
-      )}
+      <div ref={contentRef}>
+        <h2>Compare versions</h2>
+        <p className="muted">
+          Pick one agent and a set of its cut versions to compare — one baseline, any number of candidates, all
+          benchmarked against the same suite.
+        </p>
 
-      {chartData && (
-        <ChartCard
-          title={RELIABILITY_TITLE}
-          filename={`reliability-delta-${agentId}`}
-          data={chartData}
-          render={renderReliabilityDelta}
-        />
-      )}
+        <div className="card">
+          <div className="field-row">
+            <div>
+              <label>Suite</label>
+              <select value={suiteId} onChange={(e) => setSuiteId(e.target.value)}>
+                {suites.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.name || s.id}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label>Agent</label>
+              <select value={agentId} onChange={(e) => setAgentId(e.target.value)} disabled={agentIds.length === 0}>
+                {agentIds.length === 0 && <option value="">No recorded runs for this suite yet</option>}
+                {agentIds.map((id) => (
+                  <option key={id} value={id}>
+                    {agentsById[id]?.name || id}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
 
-      {chartData && (
-        <ChartCard
-          title={PARETO_TITLE}
-          filename={`pareto-scatter-${agentId}`}
-          data={chartData}
-          render={renderParetoScatter}
-        />
-      )}
-
-      {chartData && (
-        <ChartCard
-          title={MATRIX_TITLE}
-          filename={`regression-matrix-${agentId}`}
-          data={chartData}
-          render={renderRegressionMatrix}
-        />
-      )}
-
-      {chartData && (
-        <ChartCard
-          title={ITERATION_BUDGET_TITLE}
-          filename={`iteration-budget-${agentId}`}
-          data={chartData}
-          render={renderIterationBudget}
-        />
-      )}
-
-      {/* The five distribution strips are small multiples of the same chart shape — grouped
-          two-per-row (wrapping to one on a narrower viewport) instead of five stacked full-width
-          rows, since each strip's actual content (a handful of horizontal lanes) doesn't need the
-          full width of this page's wide main. */}
-      {chartData && (
-        <div className="viz-row">
-          <ChartCard
-            title={renderDurationStrip.TITLE}
-            filename={`duration-strip-${agentId}`}
-            data={chartData}
-            render={renderDurationStrip}
-          />
-          <ChartCard
-            title={renderInputTokensStrip.TITLE}
-            filename={`input-tokens-strip-${agentId}`}
-            data={chartData}
-            render={renderInputTokensStrip}
-          />
-          <ChartCard
-            title={renderOutputTokensStrip.TITLE}
-            filename={`output-tokens-strip-${agentId}`}
-            data={chartData}
-            render={renderOutputTokensStrip}
-          />
-          <ChartCard
-            title={renderCostStrip.TITLE}
-            filename={`cost-strip-${agentId}`}
-            data={chartData}
-            render={renderCostStrip}
-          />
-          <ChartCard
-            title={renderContextStrip.TITLE}
-            filename={`context-strip-${agentId}`}
-            data={chartData}
-            render={renderContextStrip}
-          />
+          {records === null ? (
+            <p className="muted">Loading…</p>
+          ) : points.length === 0 ? (
+            <p className="muted">No recorded runs for this suite/agent yet — run the suite first.</p>
+          ) : (
+            <>
+              <label>Versions</label>
+              <table className="version-picker-table">
+                <thead>
+                  <tr>
+                    <th>Baseline</th>
+                    <th>Candidate</th>
+                    <th>Version</th>
+                    <th>Last run</th>
+                    <th>Pass rate</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {points.map((p) => (
+                    <tr key={p.version ?? "current"} className={p.version === baselineVersion ? "is-baseline" : undefined}>
+                      <td>
+                        <input
+                          type="radio"
+                          name="baseline"
+                          checked={p.version === baselineVersion}
+                          onChange={() => setBaseline(p.version)}
+                        />
+                      </td>
+                      <td>
+                        <input
+                          type="checkbox"
+                          checked={candidateVersions.has(p.version) && p.version !== baselineVersion}
+                          disabled={p.version === baselineVersion}
+                          onChange={() => toggleCandidate(p.version)}
+                        />
+                      </td>
+                      <td className="mono">
+                        <Link to={agentConfigHref(agentId, p.version)} title="Open this version in the agent config editor">
+                          {pointLabel(p.version)}
+                        </Link>
+                      </td>
+                      <td className="mono">{fmtTimestamp(p.timestamp)}</td>
+                      <td className="mono">{Math.round(p.summary.passRate * 100)}%</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </>
+          )}
         </div>
-      )}
 
-      {chartData && (
-        <ChartCard
-          title={TOOL_FLOW_TITLE}
-          filename={`tool-usage-flow-${agentId}`}
-          data={chartData}
-          render={renderToolUsageFlow}
-        />
-      )}
+        {chartData && (
+          <ChartCard
+            title={DELTA_HEADER_TITLE}
+            filename={`delta-header-${agentId}`}
+            data={chartData}
+            render={renderDeltaHeader}
+          />
+        )}
+
+        {chartData && (
+          <ChartCard
+            title={RELIABILITY_TITLE}
+            filename={`reliability-delta-${agentId}`}
+            data={chartData}
+            render={renderReliabilityDelta}
+          />
+        )}
+
+        {chartData && (
+          <ChartCard
+            title={PARETO_TITLE}
+            filename={`pareto-scatter-${agentId}`}
+            data={chartData}
+            render={renderParetoScatter}
+          />
+        )}
+
+        {chartData && (
+          <ChartCard
+            title={MATRIX_TITLE}
+            filename={`regression-matrix-${agentId}`}
+            data={chartData}
+            render={renderRegressionMatrix}
+          />
+        )}
+
+        {chartData && (
+          <ChartCard
+            title={ITERATION_BUDGET_TITLE}
+            filename={`iteration-budget-${agentId}`}
+            data={chartData}
+            render={renderIterationBudget}
+          />
+        )}
+
+        {/* The five distribution strips are small multiples of the same chart shape — grouped
+            two-per-row (wrapping to one on a narrower viewport) instead of five stacked full-width
+            rows, since each strip's actual content (a handful of horizontal lanes) doesn't need the
+            full width of this page's wide main. */}
+        {chartData && (
+          <div className="viz-row">
+            <ChartCard
+              title={renderDurationStrip.TITLE}
+              filename={`duration-strip-${agentId}`}
+              data={chartData}
+              render={renderDurationStrip}
+            />
+            <ChartCard
+              title={renderInputTokensStrip.TITLE}
+              filename={`input-tokens-strip-${agentId}`}
+              data={chartData}
+              render={renderInputTokensStrip}
+            />
+            <ChartCard
+              title={renderOutputTokensStrip.TITLE}
+              filename={`output-tokens-strip-${agentId}`}
+              data={chartData}
+              render={renderOutputTokensStrip}
+            />
+            <ChartCard
+              title={renderCostStrip.TITLE}
+              filename={`cost-strip-${agentId}`}
+              data={chartData}
+              render={renderCostStrip}
+            />
+            <ChartCard
+              title={renderContextStrip.TITLE}
+              filename={`context-strip-${agentId}`}
+              data={chartData}
+              render={renderContextStrip}
+            />
+          </div>
+        )}
+
+        {chartData && (
+          <ChartCard
+            title={TOOL_FLOW_TITLE}
+            filename={`tool-usage-flow-${agentId}`}
+            data={chartData}
+            render={renderToolUsageFlow}
+          />
+        )}
+      </div>
     </div>
   );
 }
