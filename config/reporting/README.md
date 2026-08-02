@@ -76,17 +76,30 @@ your functions as if they were already sandboxed.
 See `avg-duration-by-agent.js` (a D3 bar chart) and `results-table.js` (a plain `<table>`) for
 minimal working examples — same contract, different rendering choice.
 
-## Default visualizations (the 9 outcome parameters)
+## Default visualizations
 
-MAVERIK ships 21 default visualizations covering the 9 outcome parameters every `AgentSummary`
-tracks (pass rate, duration, input/output tokens, tool calls, peak context tokens, token/tool/
-overall cost):
+MAVERIK ships 35 default visualizations. 28 are chart-shaped — exportable one at a time as PNG or
+SVG, same as any chart in the Visualizations tab. 7 are table-shaped (`metrics-by-agent.js`,
+`metrics-by-run.js`, `question-details.js`, `question-pass-rate-matrix.js`,
+`reliability-by-agent.js`, `capability-by-agent.js`, `results-table.js`) — exportable one at a time
+too, but PNG only, since an HTML table has no natural vector-graphics form (see
+docs/chart-design-system.md's `exportElementAsPng`).
 
-- `runs-over-time-<metric>.js` (9 files) — line chart, one point per `SuiteRunRecord` in `data`,
-  x-axis = that run's timestamp.
-- `agent-average-<metric>.js` (9 files) — line chart, one point per distinct `agentId` in `data`,
-  y-value = that metric averaged across the agent's records in the current selection.
-- `metrics-by-agent.js` — table, all 9 metrics averaged per agent.
+### The 9 outcome parameters
+
+Covering the 9 metrics every `AgentSummary` tracks (pass rate, duration, input/output tokens, tool
+calls, peak context tokens, token/tool/overall cost):
+
+- `runs-over-time-<metric>.js` (9 files) — line chart, one line per agent (color + legend once more
+  than one agent is in the current selection), x-axis = each run's timestamp. A point is marked
+  with a dashed ring + a tooltip note when that agent's config changed since its previous recorded
+  run, so a metric shift reads as visually tied to "something changed here," not a mystery.
+- `agent-average-<metric>.js` (9 files) — bar chart, one bar per distinct `agentId` in `data`,
+  height = that metric averaged across the agent's records in the current selection. Bar, not
+  line: agents are unordered categories, not a time series, and a connected line here would falsely
+  imply order/trend between them.
+- `metrics-by-agent.js` — table, all 9 metrics (plus Anthropic prompt-caching token averages, null
+  for agents without `promptCaching` enabled) averaged per agent.
 - `metrics-by-run.js` — table, all 9 metrics per individual run record (no aggregation).
 - `question-details.js` — table, one row per question/case, flattened out of every record's
   `results` field (see above).
@@ -95,18 +108,47 @@ overall cost):
 `context-window`, `token-cost`, `tool-cost`, `overall-cost`. These are plain files like any other
 — edit or delete them the same way you would a hand-authored one.
 
-Four more go beyond the 9-metric grid, using the per-question `results` data directly (see above):
+### Beyond the 9-metric grid
+
+Using the per-question `results` data directly, or reliability/capability/worst-case fields
+outside the original 9 parameters:
 
 - `question-pass-rate-matrix.js` — heatmap table, one row per question, one column per agent,
   cell = pass rate for that pair. Rows sort worst-first so the questions actually worth looking
   at surface at the top.
 - `cost-vs-correctness.js` — scatter, one point per agent, x = overall cost, y = pass rate — the
   accuracy-per-dollar tradeoff none of the single-metric charts show.
+- `cost-per-question-distribution.js` — beeswarm, one lane per agent, every case's own cost as its
+  own point — an average alone hides whether an agent's cost is consistent or has a long tail of
+  expensive outlier questions.
+- `duration-per-question-distribution.js` — the same beeswarm treatment for duration, the direct
+  counterpart to `agent-average-duration.js`'s average-only view.
+- `cost-composition-by-agent.js` — stacked bar, token cost + tool cost per agent — the split none
+  of `agent-average-token-cost.js`/`tool-cost.js`/`overall-cost.js` can show on its own, since each
+  only ever plots one number per agent.
+- `cache-effectiveness-by-agent.js` — bar chart, cache-read tokens as a share of average input
+  tokens, per agent with `promptCaching` enabled — is caching actually paying off for this agent?
+  Filters on each record's own `agentSnapshot.promptCaching`, not just whether
+  `avgCacheReadInputTokens` is non-null (a non-caching agent can still report a literal `0` there).
+- `peak-context-ceiling-by-agent.js` — bar chart, the *worst-case* (not average) peak context
+  tokens per agent — an agent can look comfortably clear of the context limit on average while
+  still having occasional near-miss cases the average hides.
 - `tool-call-frequency.js` — bar chart, call count per tool name, summed across every case.
+- `iteration-budget-utilization.js` — bar chart, avg(iterations / that record's own
+  `agentSnapshot.maxIterations`) per agent — a near-miss signal before an agent ever actually hits
+  its iteration limit.
+- `runs-over-time-iteration-limit-rate.js` — line chart, the per-run counterpart to
+  `reliability-by-agent.js`'s single collapsed number: fraction of evaluated cases that hit the
+  iteration limit, one line per agent, over time, with the same config-change markers as the
+  9-metric `runs-over-time-*.js` family.
 - `reliability-by-agent.js` — table of error rate and iteration-limit-hit rate per agent, the
   reliability signals a pass-rate number alone doesn't explain.
+- `capability-by-agent.js` — table, each agent's current tool-catalog identity (tool count + a
+  content-hashed digest), plus whether that digest stayed stable or changed across the selection.
 
-Two more cover fields outside the original 9-parameter set: Anthropic prompt-caching token
-averages (`metrics-by-agent.js` gained two columns for these) and the per-agent tool-catalog
-digest/tool-count (`capability-by-agent.js`, new) — both null/absent for agents that don't have
-`promptCaching` enabled.
+One more note on consistency: `avg-duration-by-agent.js` (see "Examples" above),
+`cost-vs-correctness.js`, `tool-call-frequency.js`, and all 9 `agent-average-<metric>.js` files
+predate `chartKit` and are still hand-rolled (`var(--x)` inline styling, no `chartKit` param) —
+everything else listed above is `chartKit`-based. Not a bug, just something to know before copying
+one of the hand-rolled files as a template for a new visualization; prefer a `chartKit`-based one
+instead (see the function contract above for which files to copy).

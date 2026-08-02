@@ -14,6 +14,7 @@
 [Roadmap](#-roadmap)
 
 ![Agent Comparison report — pass rate, cost, and token/duration breakdowns for two agent configurations side by side](docs/screenshots/agent-comparison-report.png)
+![Agent Comparison report — pass rate, cost, and token/duration breakdowns for two agent configurations side by side](docs/screenshots/agent-comparison-report2.png)
 
 
 

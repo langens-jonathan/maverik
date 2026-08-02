@@ -58,6 +58,14 @@
         {
           "ref": "iteration-budget-utilization",
           "title": "Iteration-budget utilization by agent"
+        },
+        {
+          "ref": "peak-context-ceiling-by-agent",
+          "title": "Worst-case peak context tokens by agent"
+        },
+        {
+          "ref": "duration-per-question-distribution",
+          "title": "Per-case duration spread by agent"
         }
       ]
     },
@@ -71,6 +79,10 @@
         {
           "ref": "agent-average-output-tokens",
           "title": "Avg output tokens by agent"
+        },
+        {
+          "ref": "cache-effectiveness-by-agent",
+          "title": "Prompt-cache effectiveness by agent"
         }
       ]
     },
@@ -88,6 +100,10 @@
         {
           "ref": "agent-average-overall-cost",
           "title": "Overall cost by agent"
+        },
+        {
+          "ref": "cost-composition-by-agent",
+          "title": "Token vs. tool cost by agent"
         },
         {
           "ref": "tool-call-frequency",
