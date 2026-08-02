@@ -4,8 +4,9 @@
 // and that a metric which happens to be bit-identical across every repetition (token counts,
 // almost always) gets called out as "deterministic" rather than plotted as if it had spread.
 //
-// One module, parameterized by metric (duration / input tokens / output tokens / cost are all the
-// same shape of chart) via makeDistributionStrip(metricKey) — a factory returning a bound
+// One module, parameterized by metric (duration / input tokens / output tokens / cost / peak
+// context tokens are all the same shape of chart) via makeDistributionStrip(metricKey) — a factory
+// returning a bound
 // render(container, data, theme), so `data` stays the same { baseline, candidates } shape every
 // other Compare Versions chart uses.
 //
@@ -41,6 +42,11 @@ const METRIC_DEFS = {
     label: "Cost",
     format: (v) => `$${v.toFixed(4)}`,
     get: (c) => (c.estCost == null && c.estToolCost == null ? null : (c.estCost ?? 0) + (c.estToolCost ?? 0)),
+  },
+  peakContextTokens: {
+    label: "Peak context tokens",
+    format: (v) => Math.round(v).toLocaleString(),
+    get: (c) => c.peakContextTokens,
   },
 };
 

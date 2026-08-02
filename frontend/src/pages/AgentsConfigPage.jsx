@@ -1,8 +1,21 @@
-import { useEffect, useState } from "react";
-import { Link } from "react-router-dom";
+import { useEffect, useRef, useState } from "react";
+import { Link, useLocation } from "react-router-dom";
 import { api } from "../api.js";
 import { SaveNotice } from "../components/SaveNotice.jsx";
 import { exportAgentJson } from "../agentExport.js";
+
+// Parses a #<agentId> or #<agentId>@<version> anchor into its parts — the same "@" separator
+// exportVersion's exportingKey already uses, reused here for consistency. Returns null if there's
+// no usable hash at all.
+function parseAgentHash(hash) {
+  if (!hash) return null;
+  const raw = decodeURIComponent(hash.replace(/^#/, ""));
+  if (!raw) return null;
+  const at = raw.lastIndexOf("@");
+  if (at === -1) return { agentId: raw, version: null };
+  const version = Number(raw.slice(at + 1));
+  return Number.isFinite(version) ? { agentId: raw.slice(0, at), version } : { agentId: raw, version: null };
+}
 
 function emptyAgent() {
   return {
@@ -49,6 +62,12 @@ export function AgentsConfigPage() {
   const [exportingKey, setExportingKey] = useState(null);
   const [exportError, setExportError] = useState(null);
 
+  // Landing target for cross-navigation links (Compare Versions' version picker table + Pareto
+  // scatter points) via a #<agentId> or #<agentId>@<version> hash — see parseAgentHash above.
+  const [highlightedAgentId, setHighlightedAgentId] = useState(null);
+  const rowRefs = useRef({});
+  const location = useLocation();
+
   useEffect(() => {
     Promise.all([api.getAgentsConfig(), api.getLlmModelsConfig(), api.getMcpServersConfig()])
       .then(([agentsRes, modelsRes, serversRes]) => {
@@ -59,6 +78,23 @@ export function AgentsConfigPage() {
       })
       .catch((err) => setLoadError(err.message));
   }, []);
+
+  // Runs once the agent list is loaded (rows don't exist to scroll to before then). Deliberately
+  // keyed on `location.hash` rather than a mount-only effect, so an in-app navigation to a new
+  // hash on this same page (unlikely today, but e.g. two Pareto links opened in sequence) is
+  // still honored.
+  useEffect(() => {
+    if (!data) return;
+    const parsed = parseAgentHash(location.hash);
+    if (!parsed || !data.agents.some((a) => a.id === parsed.agentId)) return;
+    setHighlightedAgentId(parsed.agentId);
+    rowRefs.current[parsed.agentId]?.scrollIntoView({ behavior: "smooth", block: "start" });
+    if (parsed.version != null) {
+      setHistoryOpen(parsed.agentId, true);
+      viewVersion(parsed.agentId, parsed.version);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [data, location.hash]);
 
   function updateAgent(index, patch) {
     setData((d) => ({
@@ -170,11 +206,13 @@ export function AgentsConfigPage() {
     }
   }
 
-  function toggleHistory(agentId) {
+  // Explicit-boolean version of the old toggleHistory, so the History <details> panel can be
+  // driven both by a user click (via its onToggle, reading the DOM's own post-click open state)
+  // and programmatically (the hash-landing effect above, forcing it open).
+  function setHistoryOpen(agentId, open) {
     const cur = versionState[agentId] || {};
-    const open = !cur.open;
     setVersionState((s) => ({ ...s, [agentId]: { ...cur, open } }));
-    if (open && !cur.versions) loadVersions(agentId);
+    if (open && !cur.versions && !cur.loading) loadVersions(agentId);
   }
 
   async function viewVersion(agentId, version) {
@@ -266,7 +304,13 @@ export function AgentsConfigPage() {
       </div>
 
       {data.agents.map((a, i) => (
-        <div className="config-row" key={i}>
+        <div
+          className={`config-row${a.id && a.id === highlightedAgentId ? " is-highlighted" : ""}`}
+          key={i}
+          ref={(el) => {
+            if (a.id) rowRefs.current[a.id] = el;
+          }}
+        >
           <div className="config-row-header">
             <h4>
               {a.id || `agent ${i + 1}`}
@@ -361,7 +405,11 @@ export function AgentsConfigPage() {
           </p>
 
           {a.id && (
-            <details className="version-history" onToggle={() => toggleHistory(a.id)}>
+            <details
+              className="version-history"
+              open={!!versionState[a.id]?.open}
+              onToggle={(e) => setHistoryOpen(a.id, e.currentTarget.open)}
+            >
               <summary>Version history</summary>
               <div className="version-history-body">
                 {versionState[a.id]?.loading && <p className="muted">Loading versions…</p>}

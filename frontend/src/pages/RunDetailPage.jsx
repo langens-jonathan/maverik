@@ -1,5 +1,5 @@
-import { Fragment, useEffect, useMemo, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
+import { Link, useParams, useSearchParams } from "react-router-dom";
 import { api } from "../api.js";
 import { usePolling } from "../hooks/usePolling.js";
 import { BarRow } from "../components/BarRow.jsx";
@@ -42,14 +42,47 @@ export function RunDetailPage() {
     2500,
     active || !!run
   );
-  const [expanded, setExpanded] = useState(null);
+  // Set, not a single key — a regression-matrix cell (Compare Versions' cross-navigation link,
+  // comparison/links.js's runCaseHref) aggregates across repetitions, so landing here can mean
+  // highlighting more than one row at once.
+  const [expanded, setExpanded] = useState(() => new Set());
   const [suite, setSuite] = useState(null);
+
+  // Landing target for the regression matrix's cell links: ?agent=&version=&question=. version
+  // travels as the literal string "null" (not omitted) when the cell was the live/current
+  // config, so it's distinguishable from the param being absent entirely.
+  const [searchParams] = useSearchParams();
+  const highlightTarget = useMemo(() => {
+    const agent = searchParams.get("agent");
+    const question = searchParams.get("question");
+    if (!agent || !question) return null;
+    const versionRaw = searchParams.get("version");
+    const version = versionRaw == null || versionRaw === "null" ? null : Number(versionRaw);
+    return { agent, version, question };
+  }, [searchParams]);
+  const rowRefs = useRef({});
+  const appliedHighlightRef = useRef(false);
 
   useEffect(() => {
     if (!run?.suiteId) return;
     setSuite(null);
     api.getSuite(run.suiteId).then(setSuite).catch(() => setSuite(null));
   }, [run?.suiteId]);
+
+  // Applies the cell-link highlight once results are available — gated by a ref (not just
+  // `!run`) so it fires exactly once, not on every poll tick while the run is still active, which
+  // would otherwise keep forcibly re-expanding/re-scrolling even after the user collapses a row.
+  useEffect(() => {
+    if (!run || !highlightTarget || appliedHighlightRef.current) return;
+    const matches = run.results.filter(
+      (c) => c.agentId === highlightTarget.agent && (c.version ?? null) === highlightTarget.version && c.questionId === highlightTarget.question
+    );
+    if (matches.length === 0) return;
+    appliedHighlightRef.current = true;
+    const keys = matches.map((c) => `${c.agentId}:${c.version ?? "live"}:${c.questionId}:${c.repetition}`);
+    setExpanded(new Set(keys));
+    requestAnimationFrame(() => rowRefs.current[keys[0]]?.scrollIntoView({ behavior: "smooth", block: "center" }));
+  }, [run, highlightTarget]);
 
   // criteriaByQuestionId: only used by the per-criterion-outcomes chart — a suite that failed to
   // load (deleted since the run, or still loading) just means that one chart falls back to an
@@ -248,10 +281,28 @@ export function RunDetailPage() {
           <tbody>
             {run.results.map((c, i) => {
               const key = `${c.agentId}:${c.version ?? "live"}:${c.questionId}:${c.repetition}`;
-              const isOpen = expanded === key;
+              const isOpen = expanded.has(key);
+              const isHighlighted =
+                highlightTarget != null &&
+                c.agentId === highlightTarget.agent &&
+                (c.version ?? null) === highlightTarget.version &&
+                c.questionId === highlightTarget.question;
+              function toggle() {
+                setExpanded((prev) => {
+                  const next = new Set(prev);
+                  if (next.has(key)) next.delete(key);
+                  else next.add(key);
+                  return next;
+                });
+              }
               return (
                 <Fragment key={key}>
-                  <tr onClick={() => setExpanded(isOpen ? null : key)} style={{ cursor: "pointer" }}>
+                  <tr
+                    ref={(el) => (rowRefs.current[key] = el)}
+                    onClick={toggle}
+                    className={isHighlighted ? "is-highlighted" : undefined}
+                    style={{ cursor: "pointer" }}
+                  >
                     <td className="mono">
                       {c.agentId}
                       {c.version != null ? ` (v${c.version})` : ""}

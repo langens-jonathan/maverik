@@ -22,8 +22,16 @@
 // Built on the shared chart toolkit — see docs/chart-design-system.md. The bottom (tool-name)
 // axis keeps its custom rotated-label styling rather than going through core/axes.js's
 // styleAxis — that helper covers the common case, not every axis variant.
+//
+// One plain-HTML link below the SVG (outside it, per the export rules — a link is a control, not
+// chart content) to the baseline's configured MCP server set, not a per-bar link: the same
+// tool-to-server ambiguity noted above (ToolNames never recorded which server owned a call) means
+// a per-tool destination would overclaim precision this data doesn't support. Reads
+// baseline.agentSnapshot.mcpServers (the frozen set actually used to produce this data) rather
+// than looking up the agent's current live config, which may have drifted since.
 import * as d3 from "d3";
 import { baselineColor } from "./comparison/palette.js";
+import { mcpServersHref } from "./comparison/links.js";
 import { createChartSvg } from "./core/svgFrame.js";
 import { drawHorizontalGridlines, styleAxis } from "./core/axes.js";
 import { createTooltip } from "./core/tooltip.js";
@@ -156,4 +164,16 @@ export default function render(container, data, theme) {
     theme,
     { x: 0, y: height - legendH + 14, fontSize: 10, gap: 18, widthMultiplier: 6 }
   );
+
+  const servers = baseline.agentSnapshot?.mcpServers ?? [];
+  if (servers.length > 0) {
+    // Not .field-hint — that class's --muted color would win over the global a{color:--accent}
+    // rule by specificity, making this not read as a link at all.
+    d3.select(container).append("a")
+      .attr("href", mcpServersHref(servers))
+      .style("display", "inline-block")
+      .style("margin-top", "0.5rem")
+      .style("font-size", "0.74rem")
+      .text(`View this agent's MCP servers (${servers.length}) →`);
+  }
 }

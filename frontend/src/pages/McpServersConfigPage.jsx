@@ -1,4 +1,5 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { api } from "../api.js";
 import { SaveNotice } from "../components/SaveNotice.jsx";
 
@@ -14,6 +15,21 @@ export function McpServersConfigPage() {
   const [result, setResult] = useState(null);
   const [saving, setSaving] = useState(false);
 
+  // Landing target for Compare Versions' tool-usage-flow chart: ?servers=a,b,c highlights the
+  // named servers (an agent's whole configured mcpServers set — this page has no per-tool
+  // ownership data, so it can't pinpoint a single server for a single tool, see
+  // charts/toolUsageFlow.js's own header comment). Names are passed directly rather than an
+  // agentId since this page never fetches agents.json. searchParams.get already fully decodes the
+  // param value (URLSearchParams' own encoding, built by comparison/links.js's mcpServersHref),
+  // so no per-token decodeURIComponent here — that would double-decode.
+  const [searchParams] = useSearchParams();
+  const highlightedServers = useMemo(() => {
+    const raw = searchParams.get("servers");
+    if (!raw) return new Set();
+    return new Set(raw.split(",").map((s) => s.trim()).filter(Boolean));
+  }, [searchParams]);
+  const rowRefs = useRef({});
+
   useEffect(() => {
     api
       .getMcpServersConfig()
@@ -23,6 +39,12 @@ export function McpServersConfigPage() {
       })
       .catch((err) => setLoadError(err.message));
   }, []);
+
+  useEffect(() => {
+    if (!data || highlightedServers.size === 0) return;
+    const first = data.servers.find((s) => highlightedServers.has(s.name));
+    first && rowRefs.current[first.name]?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }, [data, highlightedServers]);
 
   function updateServer(index, patch) {
     setData((d) => ({
@@ -108,7 +130,13 @@ export function McpServersConfigPage() {
       {saveError && <p className="error-text">{saveError}</p>}
 
       {data.servers.map((s, i) => (
-        <div className="config-row" key={i}>
+        <div
+          className={`config-row${s.name && highlightedServers.has(s.name) ? " is-highlighted" : ""}`}
+          key={i}
+          ref={(el) => {
+            if (s.name) rowRefs.current[s.name] = el;
+          }}
+        >
           <div className="config-row-header">
             <h4>{s.name || `server ${i + 1}`}</h4>
             <button className="secondary" onClick={() => removeServer(i)}>

@@ -11,7 +11,14 @@
 //     look at.
 //   - Sort: regressions-first, by how much each row's candidates fell vs. baseline.
 //
-// Contract: render(container, data, theme) where data = { baseline, candidates }.
+// Contract: render(container, data, theme) where data = { agentId, baseline, candidates }.
+//
+// Every cell with at least one recorded case (evaluated or errored) is wrapped in a real SVG <a>
+// to runCaseHref(point.sourceRunId, data.agentId, point.version, questionId) — the "pre-ship
+// safety check" chart's whole point is drilling into a specific failure, so this is the marquee
+// cross-navigation link on the page. A cell with zero cases at all (the "–" empty state) stays a
+// plain <g>; there's nothing to open. Same full-page-navigation trade-off as paretoScatter.js's
+// point links — see that file's header comment.
 //
 // Built on the shared chart toolkit — see docs/chart-design-system.md. This chart doesn't use
 // axes/gridlines/beeswarm/label-collision (it's a cell grid, not a scaled plot) and keeps its one
@@ -20,6 +27,7 @@
 // this refactor's acceptance test is zero visual/behavioral regression.
 import * as d3 from "d3";
 import { baselineColor } from "./comparison/palette.js";
+import { runCaseHref } from "./comparison/links.js";
 import { createChartSvg } from "./core/svgFrame.js";
 import { showEmptyState } from "./core/emptyState.js";
 
@@ -49,6 +57,7 @@ function cellFor(point, questionId) {
     passFraction: evaluated.length === 0 ? null : passed / evaluated.length,
     passed,
     n: evaluated.length,
+    total: cases.length,
     errors: cases.length - evaluated.length,
     tokens: avg(evaluated.map((c) => (c.inputTokens != null && c.outputTokens != null ? c.inputTokens + c.outputTokens : null))),
     cost: avg(evaluated.map((c) => (c.estCost == null && c.estToolCost == null ? null : (c.estCost ?? 0) + (c.estToolCost ?? 0)))),
@@ -184,7 +193,8 @@ export default function render(container, data, theme) {
 
       row.cells.forEach((cell, ci) => {
         const cx = labelColW + ci * colW;
-        const isBaseline = points[ci].isBaseline;
+        const point = points[ci];
+        const isBaseline = point.isBaseline;
         const delta = isBaseline || baseFrac == null || cell.passFraction == null ? null : cell.passFraction - baseFrac;
         const changed = delta != null && Math.abs(delta) > 1e-9;
 
@@ -197,7 +207,20 @@ export default function render(container, data, theme) {
           fill = delta < 0 ? theme.bad : theme.ok;
         }
 
-        const cellG = rg.append("g").attr("transform", `translate(${cx + cellPad},${cellPad})`);
+        const linkable = !!point.sourceRunId && cell.total > 0;
+        const cellG = rg.append(linkable ? "a" : "g").attr("transform", `translate(${cx + cellPad},${cellPad})`);
+        if (linkable) {
+          cellG
+            .attr("href", runCaseHref(point.sourceRunId, data.agentId, point.version, row.questionId))
+            .attr("tabindex", 0)
+            .style("cursor", "pointer")
+            .on("mouseenter focus", function () {
+              d3.select(this).select("rect").attr("stroke", theme.accent).attr("stroke-width", 1.5);
+            })
+            .on("mouseleave blur", function () {
+              d3.select(this).select("rect").attr("stroke", "none");
+            });
+        }
         cellG.append("rect")
           .attr("width", colW - cellPad * 2).attr("height", rowH - cellPad * 2)
           .attr("rx", 3)

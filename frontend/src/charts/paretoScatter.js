@@ -7,13 +7,22 @@
 // labels specifically because they collided; the point count here is small enough that placement
 // dodging is workable, per marks-and-anatomy.md's "few points" branch of that same guidance).
 //
-// Contract: render(container, data, theme) where data = { baseline, candidates }, entries shaped
-// like { label, color, summary, results }.
+// Contract: render(container, data, theme) where data = { agentId, baseline, candidates },
+// entries shaped like { label, version, color, summary, results }.
+//
+// Each point is wrapped in a real SVG <a> to agentConfigHref(data.agentId, point.version) —
+// every point on this chart is a version of the same agent (the page is scoped to one agentId via
+// its picker), so the destination only ever varies by which version's row/History entry to land
+// on. This is a full page navigation, not a client-side route transition: a plain <a> inside a
+// hand-rolled SVG is outside react-router's tree, so it can't intercept the click. Accepted
+// deliberately (see docs/chart-design-system.md's cross-navigation note) rather than threading a
+// navigate() callback through every chart module's (container, data, theme) contract.
 //
 // Built on the shared chart toolkit — see docs/chart-design-system.md.
 import * as d3 from "d3";
 import { baselineColor } from "./comparison/palette.js";
 import { METRICS, overallCostPerQuestion, computeDelta } from "./comparison/metrics.js";
+import { agentConfigHref } from "./comparison/links.js";
 import { createChartSvg } from "./core/svgFrame.js";
 import { drawHorizontalGridlines, drawVerticalGridlines, styleAxis } from "./core/axes.js";
 import { placeLabels } from "./core/labelCollision.js";
@@ -137,7 +146,18 @@ export default function render(container, data, theme) {
     tooltip.showAt(atX, atY);
   }
 
-  const g = svg.selectAll(".pf-point").data(placed).join("g").attr("class", "pf-point");
+  // <a>, not <g> — every point on this chart is a version of data.agentId, so wrapping the whole
+  // mark in a real anchor gets native keyboard focus + open-in-new-tab for free. tabindex lives
+  // here (the single tab stop per point), not on the hit-target circle below, which would
+  // otherwise create a second, redundant tab stop for the same point.
+  const g = svg.selectAll(".pf-point").data(placed).join("a")
+    .attr("class", "pf-point")
+    .attr("href", (p) => agentConfigHref(data.agentId, p.version))
+    .attr("tabindex", 0)
+    .on("focus", function (event, p) {
+      showTooltip(p, cx(p) + radius(p) + 12, cy(p) - 10);
+    })
+    .on("blur", () => tooltip.hide());
 
   g.append("circle")
     .attr("cx", cx).attr("cy", cy).attr("r", radius)
@@ -160,15 +180,15 @@ export default function render(container, data, theme) {
     .style("pointer-events", "none")
     .text((p) => p.label);
 
-  g.append("circle") // oversized hit target
+  g.append("circle") // oversized hit target — mouse only, the parent <a> owns keyboard focus
     .attr("cx", cx).attr("cy", cy).attr("r", (p) => radius(p) + 8)
-    .attr("fill", "transparent").attr("tabindex", 0)
-    .on("mouseenter focus", function (event, p) {
+    .attr("fill", "transparent")
+    .on("mouseenter", function (event, p) {
       showTooltip(p, cx(p) + radius(p) + 12, cy(p) - 10);
     })
     .on("mousemove", function (event) {
       const [mx, my] = d3.pointer(event, container);
       tooltip.moveTo(mx + 14, my - 10);
     })
-    .on("mouseleave blur", () => tooltip.hide());
+    .on("mouseleave", () => tooltip.hide());
 }

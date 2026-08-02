@@ -35,9 +35,14 @@ frontend/src/charts/
     metrics.js          MAVERIK-specific: the METRICS array (pass rate, cost/question, duration,
                        tokens, tool calls), computeDelta, spread — domain data, not chart
                        infrastructure, kept out of core/ deliberately
+    links.js             agentConfigHref, runCaseHref, mcpServersHref — cross-navigation URL
+                       builders shared between CompareVersionsPage.jsx (react-router <Link>) and
+                       the chart modules below (raw SVG <a>) — see "Cross-navigation" below
   deltaHeader.js     chart-type modules — built on core/ + comparison/
+  reliabilityDelta.js
   paretoScatter.js
   regressionMatrix.js
+  iterationBudget.js
   distributionStrip.js
   toolUsageFlow.js
   criterionOutcomes.js   chart-type modules — built on core/ only (RunDetailPage's agents are
@@ -67,6 +72,37 @@ gridlines, a tooltip, a legend, a categorical color, or an empty state reaches f
 chrome inline — see `config/reporting/visualizations/cost-per-question-distribution.js` or
 `iteration-budget-utilization.js` for worked examples. Existing sandboxed files aren't required to
 switch over immediately; this exists so new/modified ones don't re-derive what's already here.
+
+### Cross-navigation
+
+A chart's marks can double as links to wherever their data actually lives — Compare Versions'
+Pareto scatter points and regression-matrix cells both do this (`charts/comparison/links.js`'s
+`agentConfigHref`/`runCaseHref`, landing on `AgentsConfigPage.jsx`/`RunDetailPage.jsx`
+respectively), and `toolUsageFlow.js` links out to `McpServersConfigPage.jsx`. Two conventions to
+follow if you add another:
+
+- **Wrap the mark in a real SVG `<a>`** (`.join("a")` instead of `.join("g")`, with `.attr("href",
+  ...)`), not a synthetic `onClick` + programmatic navigation. This gets keyboard focus,
+  open-in-new-tab, and right-click "copy link" for free. Put `tabindex="0"` on the `<a>` itself,
+  never also on an inner hit-target circle/rect — that would create two tab stops for one point.
+  **Trade-off, accepted deliberately**: a plain `<a>` inside a hand-rolled SVG is outside
+  react-router's tree, so a click is a full page navigation, not a client-side route transition.
+  Every page here already fetches its own data fresh on mount, so nothing meaningful is lost —
+  this is simpler than threading a `navigate()` callback through every chart module's
+  `(container, data, theme)` contract. A plain HTML control (not a data mark — e.g.
+  `toolUsageFlow.js`'s "View this agent's MCP servers" link) can just be a real `<a>` appended
+  outside the `<svg>` the same way; same trade-off, same reasoning.
+- **Don't overclaim precision the data doesn't have.** `toolUsageFlow.js` links to the agent's
+  whole configured server *set*, not a per-tool-bar link to "the" server that owns that tool —
+  `QuestionRunResult.ToolNames` never recorded which server a call went to, so a per-segment link
+  would imply an answer this data can't give. When in doubt, link at the coarsest level the data
+  actually supports.
+
+The landing page on the other end needs to accept an anchor/query param and make the target
+findable — see `AgentsConfigPage.jsx`'s `parseAgentHash`/`highlightedAgentId`,
+`McpServersConfigPage.jsx`'s `?servers=` handling, and `RunDetailPage.jsx`'s
+`?agent=&version=&question=` handling for the three existing patterns (scroll into view + a
+temporary `.is-highlighted` style). Reuse one of those rather than inventing a fourth.
 
 ## The chart module interface
 
@@ -227,10 +263,13 @@ reality rather than around what looks smoothest:
    if you're showing one of the 5 headline metrics — don't redefine formatting/delta logic per
    chart.
 6. Guard the empty state with `core/emptyState.js`'s `showEmptyState`.
-7. Wire it into `CompareVersionsPage.jsx` (or whatever page you're building) via a `<ChartCard
+7. If a mark's data has an obvious landing page elsewhere in the app, wrap it in a real SVG `<a>`
+   using/extending `comparison/links.js` — see "Cross-navigation" above. Not every chart needs
+   this; skip it if there's nothing sensible to link to.
+8. Wire it into `CompareVersionsPage.jsx` (or whatever page you're building) via a `<ChartCard
    title=... subtitle=... filename=... data={chartData} render={renderYourChart} />`. `filename`
    should be unique and descriptive — it's the downloaded file's base name.
-8. Verify against real data before calling it done — this toolkit's charts were all checked by
+9. Verify against real data before calling it done — this toolkit's charts were all checked by
    replicating each chart's pure-JS math in Node against real `/api/maverik/suite-runs` output,
    not just eyeballed. A chart that can't be verified this way at all is a signal its logic
    belongs in a testable module, not inline in the render function.

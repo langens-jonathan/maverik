@@ -1,10 +1,14 @@
 import { useEffect, useMemo, useState } from "react";
+import { Link } from "react-router-dom";
 import { api } from "../api.js";
 import { ChartCard } from "../components/ChartCard.jsx";
 import { colorForIndex } from "../charts/comparison/palette.js";
+import { agentConfigHref } from "../charts/comparison/links.js";
 import renderDeltaHeader, { TITLE as DELTA_HEADER_TITLE } from "../charts/deltaHeader.js";
+import renderReliabilityDelta, { TITLE as RELIABILITY_TITLE } from "../charts/reliabilityDelta.js";
 import renderParetoScatter, { TITLE as PARETO_TITLE } from "../charts/paretoScatter.js";
 import renderRegressionMatrix, { TITLE as MATRIX_TITLE } from "../charts/regressionMatrix.js";
+import renderIterationBudget, { TITLE as ITERATION_BUDGET_TITLE } from "../charts/iterationBudget.js";
 import { makeDistributionStrip } from "../charts/distributionStrip.js";
 import renderToolUsageFlow, { TITLE as TOOL_FLOW_TITLE } from "../charts/toolUsageFlow.js";
 
@@ -12,6 +16,7 @@ const renderDurationStrip = makeDistributionStrip("durationMs");
 const renderInputTokensStrip = makeDistributionStrip("inputTokens");
 const renderOutputTokensStrip = makeDistributionStrip("outputTokens");
 const renderCostStrip = makeDistributionStrip("cost");
+const renderContextStrip = makeDistributionStrip("peakContextTokens");
 
 function pointLabel(version) {
   return version == null ? "Current" : `v${version}`;
@@ -125,19 +130,35 @@ export function CompareVersionsPage() {
     [points, candidateVersions, baselineVersion]
   );
 
+  // sourceRunId/version/agentSnapshot are threaded through alongside the existing
+  // label/color/summary/results — not used by every chart, but needed by the cross-navigation
+  // links (regression matrix cells -> run detail, Pareto points -> agent config) and the
+  // iteration-budget-utilization chart (agentSnapshot.maxIterations), which would otherwise have
+  // no way to reach data that's already sitting on the raw SuiteRunRecord `points` come from.
   const chartData = useMemo(() => {
     if (!baselinePoint) return null;
     return {
-      baseline: { label: pointLabel(baselinePoint.version), summary: baselinePoint.summary, results: baselinePoint.results },
+      agentId,
+      baseline: {
+        label: pointLabel(baselinePoint.version),
+        version: baselinePoint.version,
+        sourceRunId: baselinePoint.sourceRunId,
+        agentSnapshot: baselinePoint.agentSnapshot,
+        summary: baselinePoint.summary,
+        results: baselinePoint.results,
+      },
       candidates: candidatePoints.map((p, i) => ({
         label: pointLabel(p.version),
+        version: p.version,
+        sourceRunId: p.sourceRunId,
+        agentSnapshot: p.agentSnapshot,
         color: colorForIndex(i),
         summary: p.summary,
         results: p.results,
       })),
       toolCosts,
     };
-  }, [baselinePoint, candidatePoints, toolCosts]);
+  }, [agentId, baselinePoint, candidatePoints, toolCosts]);
 
   if (loadError) return <p className="error-text">Failed to load: {loadError}</p>;
 
@@ -210,7 +231,11 @@ export function CompareVersionsPage() {
                         onChange={() => toggleCandidate(p.version)}
                       />
                     </td>
-                    <td className="mono">{pointLabel(p.version)}</td>
+                    <td className="mono">
+                      <Link to={agentConfigHref(agentId, p.version)} title="Open this version in the agent config editor">
+                        {pointLabel(p.version)}
+                      </Link>
+                    </td>
                     <td className="mono">{fmtTimestamp(p.timestamp)}</td>
                     <td className="mono">{Math.round(p.summary.passRate * 100)}%</td>
                   </tr>
@@ -233,6 +258,16 @@ export function CompareVersionsPage() {
 
       {chartData && (
         <ChartCard
+          title={RELIABILITY_TITLE}
+          subtitle="Error rate and iteration-limit-hit rate, baseline vs. candidates — the headline metrics above don't cover whether a version got less reliable."
+          filename={`reliability-delta-${agentId}`}
+          data={chartData}
+          render={renderReliabilityDelta}
+        />
+      )}
+
+      {chartData && (
+        <ChartCard
           title={PARETO_TITLE}
           subtitle="Which version to ship — cost vs. pass rate, sized by duration, efficient set on the frontier."
           filename={`pareto-scatter-${agentId}`}
@@ -244,7 +279,7 @@ export function CompareVersionsPage() {
       {chartData && (
         <ChartCard
           title={MATRIX_TITLE}
-          subtitle="The pre-ship safety check — every question, every selected version, sortable, with a diff-vs-baseline mode."
+          subtitle="The pre-ship safety check — every question, every selected version, sortable, with a diff-vs-baseline mode. Click a cell to open that case in its run."
           filename={`regression-matrix-${agentId}`}
           data={chartData}
           render={renderRegressionMatrix}
@@ -253,42 +288,56 @@ export function CompareVersionsPage() {
 
       {chartData && (
         <ChartCard
-          title={renderDurationStrip.TITLE}
-          subtitle="Every repetition's wall-clock duration, honest at any n."
-          filename={`duration-strip-${agentId}`}
+          title={ITERATION_BUDGET_TITLE}
+          subtitle="Avg iterations used vs. each version's own configured max — a near-miss signal before a version ever actually hits its limit."
+          filename={`iteration-budget-${agentId}`}
           data={chartData}
-          render={renderDurationStrip}
+          render={renderIterationBudget}
         />
       )}
 
+      {/* The five distribution strips are small multiples of the same chart shape — grouped
+          two-per-row (wrapping to one on a narrower viewport) instead of five stacked full-width
+          rows, since each strip's actual content (a handful of horizontal lanes) doesn't need the
+          full width of this page's wide main. */}
       {chartData && (
-        <ChartCard
-          title={renderInputTokensStrip.TITLE}
-          subtitle="Per-repetition input token counts — usually the most deterministic metric here."
-          filename={`input-tokens-strip-${agentId}`}
-          data={chartData}
-          render={renderInputTokensStrip}
-        />
-      )}
-
-      {chartData && (
-        <ChartCard
-          title={renderOutputTokensStrip.TITLE}
-          subtitle="Per-repetition output token counts."
-          filename={`output-tokens-strip-${agentId}`}
-          data={chartData}
-          render={renderOutputTokensStrip}
-        />
-      )}
-
-      {chartData && (
-        <ChartCard
-          title={renderCostStrip.TITLE}
-          subtitle="Per-repetition cost (token + tool), same spread-not-average honesty as the other strips."
-          filename={`cost-strip-${agentId}`}
-          data={chartData}
-          render={renderCostStrip}
-        />
+        <div className="viz-row">
+          <ChartCard
+            title={renderDurationStrip.TITLE}
+            subtitle="Every repetition's wall-clock duration, honest at any n."
+            filename={`duration-strip-${agentId}`}
+            data={chartData}
+            render={renderDurationStrip}
+          />
+          <ChartCard
+            title={renderInputTokensStrip.TITLE}
+            subtitle="Per-repetition input token counts — usually the most deterministic metric here."
+            filename={`input-tokens-strip-${agentId}`}
+            data={chartData}
+            render={renderInputTokensStrip}
+          />
+          <ChartCard
+            title={renderOutputTokensStrip.TITLE}
+            subtitle="Per-repetition output token counts."
+            filename={`output-tokens-strip-${agentId}`}
+            data={chartData}
+            render={renderOutputTokensStrip}
+          />
+          <ChartCard
+            title={renderCostStrip.TITLE}
+            subtitle="Per-repetition cost (token + tool), same spread-not-average honesty as the other strips."
+            filename={`cost-strip-${agentId}`}
+            data={chartData}
+            render={renderCostStrip}
+          />
+          <ChartCard
+            title={renderContextStrip.TITLE}
+            subtitle="Per-repetition peak context tokens — how close a version gets to the model's context limit."
+            filename={`context-strip-${agentId}`}
+            data={chartData}
+            render={renderContextStrip}
+          />
+        </div>
       )}
 
       {chartData && (

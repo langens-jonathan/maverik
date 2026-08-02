@@ -438,6 +438,13 @@ progress::-webkit-progress-value { background: var(--accent); border-radius: 3px
 .visualization.layout-full { flex: 1 1 100%; }
 
 .viz-row { display: flex; flex-wrap: wrap; gap: 1.5rem; align-items: flex-start; }
+/* Compare Versions' distribution strips (plain .chart-card children, not the sandboxed
+   .visualization wrapper above) — flex-basis lets two sit side by side and grow to fill any
+   leftover row width, wrapping to one per row once the viewport can't fit two. margin-bottom is
+   moved from the individual cards (which would otherwise leave uneven gaps within the row) to the
+   row itself, matching a standalone .chart-card's spacing to whatever comes next. */
+.viz-row .chart-card { flex: 1 1 460px; margin-bottom: 0; }
+div.viz-row { margin-bottom: 1.1rem; }
 
 /* Widened from 1250px to keep 2 half-width visualizations (REPORT_HALF_WIDTH in
    ReportViewPage.jsx) fitting side by side now that they can carry a collapsible right-side
@@ -497,7 +504,16 @@ main.wide { max-width: 1360px; }
   border-radius: var(--radius);
   padding: 1rem 1.1rem;
   margin-bottom: 1rem;
+  transition: border-color 0.2s, box-shadow 0.2s;
 }
+/* Landing target for cross-navigation links (Compare Versions' version picker + Pareto scatter
+   points, both #<agentId> / #<agentId>@<version> anchors) — a temporary accent ring so the row
+   you were sent to is unambiguous among a possibly-long agent list. */
+.config-row.is-highlighted { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+/* Same idea for a <tr> landing target (RunDetailPage's cases table, from a regression-matrix
+   cell link) — a box-shadow ring doesn't read on a table row, so this is a background wash plus
+   a left accent bar instead. */
+tr.is-highlighted { background: var(--accent-wash); box-shadow: inset 3px 0 0 var(--accent); }
 .config-row-header { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
 .config-row-header h4 { margin: 0; font-family: var(--font-mono); font-size: 0.88rem; color: var(--text-strong); }
 .config-row-header button { padding: 0.25rem 0.6rem; font-size: 0.72rem; }
