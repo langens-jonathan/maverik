@@ -1,5 +1,6 @@
 using System.Text.Json;
 using McpHost.Agents;
+using McpHost.Config;
 using McpHost.LlmModel;
 using McpHost.Maverik;
 using McpHost.Mcp;
@@ -22,6 +23,7 @@ public class MaverikSummaryBuilderTests
         public required LLMModelRegistry Models { get; init; }
         public required McpServerRegistry Mcp { get; init; }
         public required ToolCostRegistry ToolCosts { get; init; }
+        public required ConfigFileService ConfigFiles { get; init; }
 
         public void Dispose() => Directory.Delete(TempDir, recursive: true);
     }
@@ -51,8 +53,11 @@ public class MaverikSummaryBuilderTests
         var suites = new MaverikSuiteRegistry(tempDir, agents, models, NullLogger<MaverikSuiteRegistry>.Instance);
         var mcp = new McpServerRegistry([], NullLogger<McpServerRegistry>.Instance);
         var toolCosts = new ToolCostRegistry(new ToolCostsFile());
+        // Never actually touched by these tests (every AgentSelection below is unversioned, so
+        // AgentVersionResolver never reaches LoadAgentVersion) — just needs to construct cleanly.
+        var configFiles = new ConfigFileService(tempDir);
 
-        return new Harness { TempDir = tempDir, Suites = suites, Agents = agents, Models = models, Mcp = mcp, ToolCosts = toolCosts };
+        return new Harness { TempDir = tempDir, Suites = suites, Agents = agents, Models = models, Mcp = mcp, ToolCosts = toolCosts, ConfigFiles = configFiles };
     }
 
     private static AgentConfig Agent(string id, string model = "unpriced-model") => new()
@@ -61,7 +66,9 @@ public class MaverikSummaryBuilderTests
     };
 
     private static RunStatus Run(string suiteId, IReadOnlyList<string> agentIds, IReadOnlyList<QuestionRunResult> results) => new(
-        RunId: "run-1", SuiteId: suiteId, AgentIds: agentIds, Repetitions: 1, State: "completed",
+        RunId: "run-1", SuiteId: suiteId,
+        AgentSelections: agentIds.Select(id => new AgentSelection(id, null)).ToList(),
+        Repetitions: 1, State: "completed",
         TotalCases: results.Count, CompletedCases: results.Count, CreatedAt: DateTimeOffset.UtcNow,
         StartedAt: DateTimeOffset.UtcNow, FinishedAt: DateTimeOffset.UtcNow, Results: results, JudgedMetrics: []);
 
@@ -76,7 +83,7 @@ public class MaverikSummaryBuilderTests
             new() { AgentId = "agent1", QuestionId = "q3", Repetition = 1, Passed = false },
         };
 
-        var summary = MaverikSummaryBuilder.Build(Run("suite-1", ["agent1"], results), h.Suites, h.Agents, h.Models, h.Mcp, h.ToolCosts);
+        var summary = MaverikSummaryBuilder.Build(Run("suite-1", ["agent1"], results), h.Suites, h.Agents, h.Models, h.Mcp, h.ToolCosts, h.ConfigFiles);
         var agent1 = summary.Agents.Single(a => a.AgentId == "agent1");
 
         Assert.Equal(0.5, agent1.PassRate);
@@ -93,7 +100,7 @@ public class MaverikSummaryBuilderTests
             new() { AgentId = "agent1", QuestionId = "q2", Repetition = 1, InputTokens = null, OutputTokens = null, Passed = true },
         };
 
-        var summary = MaverikSummaryBuilder.Build(Run("suite-1", ["agent1"], results), h.Suites, h.Agents, h.Models, h.Mcp, h.ToolCosts);
+        var summary = MaverikSummaryBuilder.Build(Run("suite-1", ["agent1"], results), h.Suites, h.Agents, h.Models, h.Mcp, h.ToolCosts, h.ConfigFiles);
         var agent1 = summary.Agents.Single(a => a.AgentId == "agent1");
 
         Assert.Equal(100, agent1.AvgInputTokens);
@@ -110,7 +117,7 @@ public class MaverikSummaryBuilderTests
             new() { AgentId = "agent1", QuestionId = "q1", Repetition = 1, InputTokens = 1_000_000, OutputTokens = 1_000_000, Passed = true },
         };
 
-        var summary = MaverikSummaryBuilder.Build(Run("suite-1", ["agent1"], results), h.Suites, h.Agents, h.Models, h.Mcp, h.ToolCosts);
+        var summary = MaverikSummaryBuilder.Build(Run("suite-1", ["agent1"], results), h.Suites, h.Agents, h.Models, h.Mcp, h.ToolCosts, h.ConfigFiles);
         var agent1 = summary.Agents.Single(a => a.AgentId == "agent1");
 
         Assert.Equal(18m, agent1.EstCostPerQuestion);
@@ -126,7 +133,7 @@ public class MaverikSummaryBuilderTests
             new() { AgentId = "agent1", QuestionId = "q1", Repetition = 1, InputTokens = 100, OutputTokens = 50, Passed = true },
         };
 
-        var summary = MaverikSummaryBuilder.Build(Run("suite-1", ["agent1"], results), h.Suites, h.Agents, h.Models, h.Mcp, h.ToolCosts);
+        var summary = MaverikSummaryBuilder.Build(Run("suite-1", ["agent1"], results), h.Suites, h.Agents, h.Models, h.Mcp, h.ToolCosts, h.ConfigFiles);
         var agent1 = summary.Agents.Single(a => a.AgentId == "agent1");
 
         Assert.Null(agent1.EstCostPerQuestion);
@@ -142,7 +149,7 @@ public class MaverikSummaryBuilderTests
             new() { AgentId = "agent1", QuestionId = "q1", Repetition = 1, Passed = true, ToolNames = ["some_tool"] },
         };
 
-        var summary = MaverikSummaryBuilder.Build(Run("suite-1", ["agent1"], results), h.Suites, h.Agents, h.Models, h.Mcp, h.ToolCosts);
+        var summary = MaverikSummaryBuilder.Build(Run("suite-1", ["agent1"], results), h.Suites, h.Agents, h.Models, h.Mcp, h.ToolCosts, h.ConfigFiles);
         var agent1 = summary.Agents.Single(a => a.AgentId == "agent1");
 
         Assert.Equal(0m, agent1.EstToolCostPerQuestion);
@@ -158,7 +165,7 @@ public class MaverikSummaryBuilderTests
             new() { AgentId = "agent1", QuestionId = "q1", Repetition = 1, Error = "boom" },
         };
 
-        var summary = MaverikSummaryBuilder.Build(Run("suite-1", ["agent1"], results), h.Suites, h.Agents, h.Models, h.Mcp, h.ToolCosts);
+        var summary = MaverikSummaryBuilder.Build(Run("suite-1", ["agent1"], results), h.Suites, h.Agents, h.Models, h.Mcp, h.ToolCosts, h.ConfigFiles);
         var agent1 = summary.Agents.Single(a => a.AgentId == "agent1");
 
         Assert.Null(agent1.EstOverallCostTotal);
@@ -174,7 +181,7 @@ public class MaverikSummaryBuilderTests
             new() { AgentId = "agent1", QuestionId = "q1", Repetition = 1, InputTokens = 1_000_000, OutputTokens = 1_000_000, Passed = true },
         };
 
-        var summary = MaverikSummaryBuilder.Build(Run("suite-1", ["agent1"], results), h.Suites, h.Agents, h.Models, h.Mcp, h.ToolCosts);
+        var summary = MaverikSummaryBuilder.Build(Run("suite-1", ["agent1"], results), h.Suites, h.Agents, h.Models, h.Mcp, h.ToolCosts, h.ConfigFiles);
         var agent1 = summary.Agents.Single(a => a.AgentId == "agent1");
 
         // Tool cost is 0 (not null) since evaluated.Count > 0 — see the class-level comment.
@@ -191,7 +198,7 @@ public class MaverikSummaryBuilderTests
             new() { AgentId = "agent2", QuestionId = "q1", Repetition = 1, Passed = true, JudgeInputTokens = 20, JudgeOutputTokens = 15 },
         };
 
-        var summary = MaverikSummaryBuilder.Build(Run("suite-1", ["agent1", "agent2"], results), h.Suites, h.Agents, h.Models, h.Mcp, h.ToolCosts);
+        var summary = MaverikSummaryBuilder.Build(Run("suite-1", ["agent1", "agent2"], results), h.Suites, h.Agents, h.Models, h.Mcp, h.ToolCosts, h.ConfigFiles);
 
         Assert.Equal(30, summary.JudgeOverhead.InputTokens);
         Assert.Equal(20, summary.JudgeOverhead.OutputTokens);
@@ -250,7 +257,7 @@ public class MaverikSummaryBuilderTests
             },
         };
 
-        var summary = MaverikSummaryBuilder.Build(Run("suite-1", ["agent1"], results), h.Suites, h.Agents, h.Models, h.Mcp, h.ToolCosts);
+        var summary = MaverikSummaryBuilder.Build(Run("suite-1", ["agent1"], results), h.Suites, h.Agents, h.Models, h.Mcp, h.ToolCosts, h.ConfigFiles);
         var agent1 = summary.Agents.Single(a => a.AgentId == "agent1");
 
         // Fully cache-read: 1M tokens at $3/M * 0.1 = $0.30, NOT the plain $3 a non-cache-aware
@@ -272,7 +279,7 @@ public class MaverikSummaryBuilderTests
             },
         };
 
-        var summary = MaverikSummaryBuilder.Build(Run("suite-1", ["agent1"], results), h.Suites, h.Agents, h.Models, h.Mcp, h.ToolCosts);
+        var summary = MaverikSummaryBuilder.Build(Run("suite-1", ["agent1"], results), h.Suites, h.Agents, h.Models, h.Mcp, h.ToolCosts, h.ConfigFiles);
         var agent1 = summary.Agents.Single(a => a.AgentId == "agent1");
 
         // No cache pricing configured on the model — falls back to the plain, cache-unaware rate.
@@ -289,7 +296,7 @@ public class MaverikSummaryBuilderTests
             new() { AgentId = "agent1", QuestionId = "q2", Repetition = 1, Passed = true, CacheReadInputTokens = null, CacheCreationInputTokens = null },
         };
 
-        var summary = MaverikSummaryBuilder.Build(Run("suite-1", ["agent1"], results), h.Suites, h.Agents, h.Models, h.Mcp, h.ToolCosts);
+        var summary = MaverikSummaryBuilder.Build(Run("suite-1", ["agent1"], results), h.Suites, h.Agents, h.Models, h.Mcp, h.ToolCosts, h.ConfigFiles);
         var agent1 = summary.Agents.Single(a => a.AgentId == "agent1");
 
         Assert.Equal(200, agent1.AvgCacheReadInputTokens);
@@ -302,7 +309,7 @@ public class MaverikSummaryBuilderTests
         using var h = NewHarness("suite-1", [Agent("agent1")], []);
         var results = new List<QuestionRunResult> { new() { AgentId = "agent1", QuestionId = "q1", Repetition = 1, Passed = true } };
 
-        var summary = MaverikSummaryBuilder.Build(Run("suite-1", ["agent1"], results), h.Suites, h.Agents, h.Models, h.Mcp, h.ToolCosts);
+        var summary = MaverikSummaryBuilder.Build(Run("suite-1", ["agent1"], results), h.Suites, h.Agents, h.Models, h.Mcp, h.ToolCosts, h.ConfigFiles);
         var agent1 = summary.Agents.Single(a => a.AgentId == "agent1");
 
         Assert.Null(agent1.CapabilityDigest);
@@ -315,9 +322,9 @@ public class MaverikSummaryBuilderTests
         using var h = NewHarness("suite-1", [Agent("agent1")], []);
         var results = new List<QuestionRunResult> { new() { AgentId = "agent1", QuestionId = "q1", Repetition = 1, Passed = true } };
         var bundle = new CapabilityBundle("agent1", [], "sha256:abc123", 3);
-        var run = Run("suite-1", ["agent1"], results) with { CapabilityBundles = new Dictionary<string, CapabilityBundle> { ["agent1"] = bundle } };
+        var run = Run("suite-1", ["agent1"], results) with { CapabilityBundles = new Dictionary<AgentSelection, CapabilityBundle> { [new AgentSelection("agent1", null)] = bundle } };
 
-        var summary = MaverikSummaryBuilder.Build(run, h.Suites, h.Agents, h.Models, h.Mcp, h.ToolCosts);
+        var summary = MaverikSummaryBuilder.Build(run, h.Suites, h.Agents, h.Models, h.Mcp, h.ToolCosts, h.ConfigFiles);
         var agent1 = summary.Agents.Single(a => a.AgentId == "agent1");
 
         Assert.Equal("sha256:abc123", agent1.CapabilityDigest);

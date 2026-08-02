@@ -1,7 +1,21 @@
-import { useEffect, useState } from "react";
-import { Link } from "react-router-dom";
+import { useEffect, useRef, useState } from "react";
+import { Link, useLocation } from "react-router-dom";
 import { api } from "../api.js";
 import { SaveNotice } from "../components/SaveNotice.jsx";
+import { exportAgentJson } from "../agentExport.js";
+
+// Parses a #<agentId> or #<agentId>@<version> anchor into its parts — the same "@" separator
+// exportVersion's exportingKey already uses, reused here for consistency. Returns null if there's
+// no usable hash at all.
+function parseAgentHash(hash) {
+  if (!hash) return null;
+  const raw = decodeURIComponent(hash.replace(/^#/, ""));
+  if (!raw) return null;
+  const at = raw.lastIndexOf("@");
+  if (at === -1) return { agentId: raw, version: null };
+  const version = Number(raw.slice(at + 1));
+  return Number.isFinite(version) ? { agentId: raw.slice(0, at), version } : { agentId: raw, version: null };
+}
 
 function emptyAgent() {
   return {
@@ -13,6 +27,7 @@ function emptyAgent() {
     systemPrompt: null,
     mcpServers: [],
     maxIterations: 8,
+    version: 0,
   };
 }
 
@@ -37,6 +52,22 @@ export function AgentsConfigPage() {
   const [duplicatingIndex, setDuplicatingIndex] = useState(null);
   const [duplicateError, setDuplicateError] = useState(null);
 
+  // Per-agent-id state for the version-history panel: { open, loading, error, versions,
+  // viewingVersion, viewLoading, viewError, viewSnapshot }. Keyed by agent id rather than index
+  // since versions only ever apply to an already-saved agent (a stable id), unlike row index
+  // which shifts when rows are added/removed/duplicated.
+  const [versionState, setVersionState] = useState({});
+  const [cuttingId, setCuttingId] = useState(null);
+  const [cutError, setCutError] = useState(null);
+  const [exportingKey, setExportingKey] = useState(null);
+  const [exportError, setExportError] = useState(null);
+
+  // Landing target for cross-navigation links (Compare Versions' version picker table + Pareto
+  // scatter points) via a #<agentId> or #<agentId>@<version> hash — see parseAgentHash above.
+  const [highlightedAgentId, setHighlightedAgentId] = useState(null);
+  const rowRefs = useRef({});
+  const location = useLocation();
+
   useEffect(() => {
     Promise.all([api.getAgentsConfig(), api.getLlmModelsConfig(), api.getMcpServersConfig()])
       .then(([agentsRes, modelsRes, serversRes]) => {
@@ -47,6 +78,23 @@ export function AgentsConfigPage() {
       })
       .catch((err) => setLoadError(err.message));
   }, []);
+
+  // Runs once the agent list is loaded (rows don't exist to scroll to before then). Deliberately
+  // keyed on `location.hash` rather than a mount-only effect, so an in-app navigation to a new
+  // hash on this same page (unlikely today, but e.g. two Pareto links opened in sequence) is
+  // still honored.
+  useEffect(() => {
+    if (!data) return;
+    const parsed = parseAgentHash(location.hash);
+    if (!parsed || !data.agents.some((a) => a.id === parsed.agentId)) return;
+    setHighlightedAgentId(parsed.agentId);
+    rowRefs.current[parsed.agentId]?.scrollIntoView({ behavior: "smooth", block: "start" });
+    if (parsed.version != null) {
+      setHistoryOpen(parsed.agentId, true);
+      viewVersion(parsed.agentId, parsed.version);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [data, location.hash]);
 
   function updateAgent(index, patch) {
     setData((d) => ({
@@ -114,10 +162,113 @@ export function AgentsConfigPage() {
       const res = await api.saveAgentsConfig(data);
       setResult(res);
       setBootstrapped(false);
+      return true;
     } catch (err) {
       setSaveError(err.message);
+      return false;
     } finally {
       setSaving(false);
+    }
+  }
+
+  // Cutting a version freezes whatever is currently persisted in agents.json, so this saves
+  // first (the page's usual all-agents-at-once save, not a new partial-save concept) — that way
+  // the snapshot always matches exactly what's live, with no separate "did I remember to save
+  // first" state for the user to track.
+  async function cutVersion(index) {
+    const agent = data.agents[index];
+    if (!agent.id) return;
+    setCuttingId(agent.id);
+    setCutError(null);
+    try {
+      const saved = await save();
+      if (!saved) {
+        setCutError("Save failed — fix the error above before cutting a version.");
+        return;
+      }
+      const res = await api.cutAgentVersion(agent.id);
+      updateAgent(index, { version: res.version });
+      if (versionState[agent.id]?.open) await loadVersions(agent.id);
+    } catch (err) {
+      setCutError(`Failed to cut a new version of '${agent.id}': ${err.message}`);
+    } finally {
+      setCuttingId(null);
+    }
+  }
+
+  async function loadVersions(agentId) {
+    setVersionState((s) => ({ ...s, [agentId]: { ...s[agentId], loading: true, error: null } }));
+    try {
+      const versions = await api.listAgentVersions(agentId);
+      setVersionState((s) => ({ ...s, [agentId]: { ...s[agentId], loading: false, versions } }));
+    } catch (err) {
+      setVersionState((s) => ({ ...s, [agentId]: { ...s[agentId], loading: false, error: err.message } }));
+    }
+  }
+
+  // Explicit-boolean version of the old toggleHistory, so the History <details> panel can be
+  // driven both by a user click (via its onToggle, reading the DOM's own post-click open state)
+  // and programmatically (the hash-landing effect above, forcing it open).
+  function setHistoryOpen(agentId, open) {
+    const cur = versionState[agentId] || {};
+    setVersionState((s) => ({ ...s, [agentId]: { ...cur, open } }));
+    if (open && !cur.versions && !cur.loading) loadVersions(agentId);
+  }
+
+  async function viewVersion(agentId, version) {
+    setVersionState((s) => ({
+      ...s,
+      [agentId]: { ...s[agentId], viewingVersion: version, viewLoading: true, viewError: null, viewSnapshot: null },
+    }));
+    try {
+      const snapshot = await api.getAgentVersion(agentId, version);
+      setVersionState((s) => ({ ...s, [agentId]: { ...s[agentId], viewLoading: false, viewSnapshot: snapshot } }));
+    } catch (err) {
+      setVersionState((s) => ({ ...s, [agentId]: { ...s[agentId], viewLoading: false, viewError: err.message } }));
+    }
+  }
+
+  function closeVersionView(agentId) {
+    setVersionState((s) => ({
+      ...s,
+      [agentId]: { ...s[agentId], viewingVersion: null, viewSnapshot: null, viewError: null },
+    }));
+  }
+
+  // "Export current" — the live in-memory draft, no version required. Mirrors duplicateAgent's
+  // fallback: a file-based prompt (systemPrompt left null) needs inlining or the download would
+  // silently omit it.
+  async function exportCurrent(index) {
+    const agent = data.agents[index];
+    if (!agent.id) return;
+    const key = agent.id;
+    setExportingKey(key);
+    setExportError(null);
+    try {
+      let systemPrompt = agent.systemPrompt;
+      if (!systemPrompt) {
+        const prompt = await api.getPrompt(agent.id);
+        systemPrompt = prompt.content || null;
+      }
+      exportAgentJson({ ...agent, systemPrompt });
+    } catch (err) {
+      setExportError(`Failed to export '${agent.id}': ${err.message}`);
+    } finally {
+      setExportingKey(null);
+    }
+  }
+
+  async function exportVersion(agentId, version) {
+    const key = `${agentId}@${version}`;
+    setExportingKey(key);
+    setExportError(null);
+    try {
+      const snapshot = await api.getAgentVersion(agentId, version);
+      exportAgentJson(snapshot.config, { version: snapshot.version, cutAt: snapshot.cutAt });
+    } catch (err) {
+      setExportError(`Failed to export '${agentId}' v${version}: ${err.message}`);
+    } finally {
+      setExportingKey(null);
     }
   }
 
@@ -134,6 +285,8 @@ export function AgentsConfigPage() {
       />
       {saveError && <p className="error-text">{saveError}</p>}
       {duplicateError && <p className="error-text">{duplicateError}</p>}
+      {cutError && <p className="error-text">{cutError}</p>}
+      {exportError && <p className="error-text">{exportError}</p>}
 
       <div className="card">
         <label>Default agent</label>
@@ -151,10 +304,25 @@ export function AgentsConfigPage() {
       </div>
 
       {data.agents.map((a, i) => (
-        <div className="config-row" key={i}>
+        <div
+          className={`config-row${a.id && a.id === highlightedAgentId ? " is-highlighted" : ""}`}
+          key={i}
+          ref={(el) => {
+            if (a.id) rowRefs.current[a.id] = el;
+          }}
+        >
           <div className="config-row-header">
-            <h4>{a.id || `agent ${i + 1}`}</h4>
+            <h4>
+              {a.id || `agent ${i + 1}`}
+              {a.id && <span className="version-badge">{a.version > 0 ? `v${a.version}` : "unversioned"}</span>}
+            </h4>
             <div className="config-row-header-actions">
+              <button className="secondary" onClick={() => exportCurrent(i)} disabled={!a.id || exportingKey === a.id}>
+                {exportingKey === a.id ? "Exporting…" : "Export current"}
+              </button>
+              <button className="secondary" onClick={() => cutVersion(i)} disabled={!a.id || cuttingId === a.id}>
+                {cuttingId === a.id ? "Cutting…" : "Cut new version"}
+              </button>
               <button className="secondary" onClick={() => duplicateAgent(i)} disabled={!a.id || duplicatingIndex === i}>
                 {duplicatingIndex === i ? "Duplicating…" : "Duplicate"}
               </button>
@@ -235,6 +403,72 @@ export function AgentsConfigPage() {
           <p className="field-hint">
             Blank uses the file-based prompt — edit it on the <Link to="/config/prompts">Prompts</Link> tab.
           </p>
+
+          {a.id && (
+            <details
+              className="version-history"
+              open={!!versionState[a.id]?.open}
+              onToggle={(e) => setHistoryOpen(a.id, e.currentTarget.open)}
+            >
+              <summary>Version history</summary>
+              <div className="version-history-body">
+                {versionState[a.id]?.loading && <p className="muted">Loading versions…</p>}
+                {versionState[a.id]?.error && <p className="error-text">{versionState[a.id].error}</p>}
+                {versionState[a.id]?.versions?.length === 0 && (
+                  <p className="muted">No versions cut yet — use "Cut new version" above.</p>
+                )}
+                {versionState[a.id]?.versions?.length > 0 && (
+                  <table className="version-history-table">
+                    <thead>
+                      <tr>
+                        <th>Version</th>
+                        <th>Cut at</th>
+                        <th></th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {versionState[a.id].versions.map((v) => (
+                        <tr key={v.version}>
+                          <td>v{v.version}</td>
+                          <td>{new Date(v.cutAt).toLocaleString()}</td>
+                          <td>
+                            <button className="secondary" onClick={() => viewVersion(a.id, v.version)}>
+                              View
+                            </button>
+                            <button
+                              className="secondary"
+                              onClick={() => exportVersion(a.id, v.version)}
+                              disabled={exportingKey === `${a.id}@${v.version}`}
+                            >
+                              {exportingKey === `${a.id}@${v.version}` ? "Exporting…" : "Export"}
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+
+                {versionState[a.id]?.viewingVersion != null && (
+                  <div className="version-snapshot-view">
+                    <div className="config-row-header">
+                      <strong>v{versionState[a.id].viewingVersion}</strong>
+                      <button className="secondary" onClick={() => closeVersionView(a.id)}>
+                        Close
+                      </button>
+                    </div>
+                    {versionState[a.id].viewLoading && <p className="muted">Loading…</p>}
+                    {versionState[a.id].viewError && <p className="error-text">{versionState[a.id].viewError}</p>}
+                    {versionState[a.id].viewSnapshot && (
+                      <pre className="version-snapshot-json">
+                        {JSON.stringify(versionState[a.id].viewSnapshot.config, null, 2)}
+                      </pre>
+                    )}
+                  </div>
+                )}
+              </div>
+            </details>
+          )}
         </div>
       ))}
 

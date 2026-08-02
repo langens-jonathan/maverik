@@ -50,6 +50,12 @@ export const api = {
       method: "PUT",
       body: JSON.stringify({ content }),
     }),
+  cutAgentVersion: (agentId) =>
+    request(`/api/config/agents/${encodeURIComponent(agentId)}/versions`, { method: "POST" }),
+  listAgentVersions: (agentId) => request(`/api/config/agents/${encodeURIComponent(agentId)}/versions`),
+  getAgentVersion: (agentId, version) =>
+    request(`/api/config/agents/${encodeURIComponent(agentId)}/versions/${version}`),
+
   getToolCostsConfig: () => request("/api/config/tool-costs"),
   saveToolCostsConfig: (data) =>
     request("/api/config/tool-costs", { method: "PUT", body: JSON.stringify(data) }),

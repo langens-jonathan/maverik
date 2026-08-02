@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using Microsoft.Extensions.AI;
 using McpHost.Agents;
+using McpHost.Config;
 using McpHost.LlmModel;
 using McpHost.Loop;
 using McpHost.Mcp;
@@ -27,6 +28,7 @@ public sealed class MaverikRunner(
     CapabilityOverrideRegistry capabilityOverrides,
     CriterionEvaluator evaluator,
     MaverikResultsWriter writer,
+    ConfigFileService configFiles,
     ILogger<MaverikRunner> log) : BackgroundService
 {
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -64,26 +66,34 @@ public sealed class MaverikRunner(
         store.Set(status);
 
         log.LogInformation("Run '{RunId}' started: suite '{Suite}', {Agents} agent(s), {Questions} question(s), {Reps} repetition(s).",
-            request.RunId, suite.Id, request.AgentIds.Count, suite.Questions.Count, request.Repetitions);
+            request.RunId, suite.Id, request.AgentSelections.Count, suite.Questions.Count, request.Repetitions);
 
-        var bundles = new Dictionary<string, CapabilityBundle>();
+        var bundles = new Dictionary<AgentSelection, CapabilityBundle>();
 
-        foreach (var agentId in request.AgentIds)
+        foreach (var selection in request.AgentSelections)
         {
-            // Resolve everything the agent's cases share once. A bad agent/model/loop id
+            // Resolve everything the agent's cases share once. A bad agent/version/model/loop id
             // fails the whole run loudly (caught in ExecuteAsync) — it would invalidate the
-            // comparison anyway.
-            var agent = agents.Resolve(agentId);
+            // comparison anyway. Version == null resolves the live/current config, unchanged from
+            // before agent versioning existed; a pinned version goes through the frozen snapshot.
+            var agent = AgentVersionResolver.Resolve(selection.AgentId, selection.Version, agents, configFiles);
             var chat = models.Resolve(agent.Model);
             var strategy = loops.Resolve(agent.LoopType);
             var tools = mcp.ToolsForServers(agent.McpServers);
 
+            // Resolved once per agent selection (not per case) — the same per-case cost math
+            // MaverikSummaryBuilder's aggregate uses (EstimateCost/EstimateToolCost), so
+            // QuestionRunResult.EstCost/EstToolCost need only the inputs that vary per case.
+            var pricing = models.ResolveConfig(agent.Model);
+            var toolServerByName = MaverikSummaryBuilder.BuildToolServerByName(agent, mcp);
+
             // Capture the effective (post-override) catalog snapshot before running any case —
             // see CapabilityBundle. Published incrementally so it's visible mid-run, same as
-            // CompletedCases/Results below.
+            // CompletedCases/Results below. Keyed by the whole selection so two versions of the
+            // same agent in one batch get distinct bundles.
             var orderedTools = mcp.ToolsForServersWithOwner(agent.McpServers);
             var overridesForAgent = capabilityOverrides.OverridesFor(agent.Id);
-            bundles[agentId] = CapabilityBundleBuilder.Build(
+            bundles[selection] = CapabilityBundleBuilder.Build(
                 agent.Id, orderedTools.Select(t => (t.Server, (AIFunction)t.Tool)).ToList(), overridesForAgent);
             status = status with { CapabilityBundles = bundles };
             store.Set(status);
@@ -99,7 +109,7 @@ public sealed class MaverikRunner(
             {
                 for (var repetition = 1; repetition <= request.Repetitions; repetition++)
                 {
-                    var result = await RunCaseAsync(agent, chat, strategy, tools, presentationTools, suite, question, repetition, ct);
+                    var result = await RunCaseAsync(agent, selection.Version, chat, strategy, tools, presentationTools, pricing, toolServerByName, suite, question, repetition, ct);
                     results.Add(result);
 
                     // Publish progress after every case so polls see the run advance.
@@ -112,7 +122,7 @@ public sealed class MaverikRunner(
         status = status with { State = "completed", FinishedAt = DateTimeOffset.UtcNow };
         store.Set(status);
 
-        var summary = MaverikSummaryBuilder.Build(status, suites, agents, models, mcp, toolCosts);
+        var summary = MaverikSummaryBuilder.Build(status, suites, agents, models, mcp, toolCosts, configFiles);
         await writer.WriteAsync(status, summary, ct);
         await writer.WriteSuiteRunRecordsAsync(status, summary, agents, ct);
 
@@ -124,9 +134,10 @@ public sealed class MaverikRunner(
     }
 
     private async Task<QuestionRunResult> RunCaseAsync(
-        AgentConfig agent, IChatClient chat, ILoopStrategy strategy,
+        AgentConfig agent, int? version, IChatClient chat, ILoopStrategy strategy,
         IReadOnlyList<ModelContextProtocol.Client.McpClientTool> tools,
         IReadOnlyList<AITool>? presentationTools,
+        LLMModelConfig? pricing, IReadOnlyDictionary<string, string> toolServerByName,
         MaverikSuite suite, MaverikQuestion question, int repetition, CancellationToken ct)
     {
         var sw = Stopwatch.StartNew();
@@ -156,6 +167,7 @@ public sealed class MaverikRunner(
             return new QuestionRunResult
             {
                 AgentId = agent.Id,
+                Version = version,
                 QuestionId = question.Id,
                 Repetition = repetition,
                 DurationMs = sw.ElapsedMilliseconds,
@@ -173,6 +185,9 @@ public sealed class MaverikRunner(
                 EvaluationDetail = evaluation.Detail,
                 JudgeInputTokens = evaluation.JudgeInputTokens,
                 JudgeOutputTokens = evaluation.JudgeOutputTokens,
+                EstCost = MaverikSummaryBuilder.EstimateCost(
+                    turn.InputTokens, turn.OutputTokens, turn.CacheReadInputTokens, turn.CacheCreationInputTokens, pricing),
+                EstToolCost = MaverikSummaryBuilder.EstimateToolCost(turn.ToolNames, toolServerByName, toolCosts),
             };
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
@@ -189,6 +204,7 @@ public sealed class MaverikRunner(
             return new QuestionRunResult
             {
                 AgentId = agent.Id,
+                Version = version,
                 QuestionId = question.Id,
                 Repetition = repetition,
                 DurationMs = sw.ElapsedMilliseconds,

@@ -1,13 +1,14 @@
 using System.Text;
 using System.Text.Json;
 using McpHost.Agents;
+using McpHost.Config;
 
 namespace McpHost.Maverik;
 
 // Persists a finished run to results/{runId}/: run.json (the full RunStatus, per-case detail
 // included) and summary.csv (one row per case, ready for Excel/pandas). A write failure is
 // logged but never fails the run itself — the results still live in the in-memory store.
-public sealed class MaverikResultsWriter(string contentRootPath, ILogger<MaverikResultsWriter> log)
+public sealed class MaverikResultsWriter(string contentRootPath, ConfigFileService configFiles, ILogger<MaverikResultsWriter> log)
 {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web)
     {
@@ -121,14 +122,19 @@ public sealed class MaverikResultsWriter(string contentRootPath, ILogger<Maverik
                 var record = new SuiteRunRecord(
                     run.SuiteId,
                     agentSummary.AgentId,
-                    agents.Resolve(agentSummary.AgentId),
+                    agentSummary.Version,
+                    AgentVersionResolver.Resolve(agentSummary.AgentId, agentSummary.Version, agents, configFiles),
                     run.CreatedAt,
                     run.RunId,
                     run.JudgedMetrics,
                     agentSummary,
-                    run.Results.Where(r => r.AgentId == agentSummary.AgentId).ToList());
+                    run.Results.Where(r => r.AgentId == agentSummary.AgentId && r.Version == agentSummary.Version).ToList());
 
-                var fileName = $"{Sanitize(run.SuiteId)}--{Sanitize(agentSummary.AgentId)}--{run.CreatedAt:yyyyMMdd-HHmmss}.json";
+                // The version segment (or "live") stops two versions of the same agent in one
+                // batch from colliding on this filename — every agent in a batch shares one
+                // nominal run.CreatedAt, so agentId+timestamp alone isn't unique anymore.
+                var versionSegment = agentSummary.Version is { } v ? v.ToString() : "live";
+                var fileName = $"{Sanitize(run.SuiteId)}--{Sanitize(agentSummary.AgentId)}--{versionSegment}--{run.CreatedAt:yyyyMMdd-HHmmss}.json";
                 await File.WriteAllTextAsync(Path.Combine(dir, fileName), JsonSerializer.Serialize(record, JsonOptions), ct);
             }
 

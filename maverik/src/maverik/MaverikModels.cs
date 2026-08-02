@@ -2,13 +2,23 @@ using McpHost.Agents;
 
 namespace McpHost.Maverik;
 
+// One agent to run against, optionally pinned to a specific cut version (see
+// AgentVersionSnapshot). Version == null means "the live/current config" — today's only
+// behavior, unchanged; a non-null Version resolves through AgentVersionResolver instead. Records
+// have structural equality, so this doubles as a dictionary key (RunStatus.CapabilityBundles)
+// for in-memory lookups with no extra code — two selections are equal iff both AgentId and
+// Version match. JSON dictionary-key (de)serialization needs the explicit converter below,
+// though — System.Text.Json only supports primitives/strings/enums as keys out of the box.
+[System.Text.Json.Serialization.JsonConverter(typeof(AgentSelectionJsonConverter))]
+public sealed record AgentSelection(string AgentId, int? Version);
+
 // One unit of work for the MAVERIK runner: execute a suite against a set of agents, N
 // repetitions per (agent, question) pair. The 1↔2-style seam between the POST endpoint and
 // the runner, mirroring ChatJob.
 public sealed record RunRequest(
     string RunId,
     string SuiteId,
-    IReadOnlyList<string> AgentIds,
+    IReadOnlyList<AgentSelection> AgentSelections,
     int Repetitions,
     IReadOnlyList<string> JudgedMetrics);
 
@@ -17,6 +27,12 @@ public sealed record RunRequest(
 public sealed record QuestionRunResult
 {
     public required string AgentId { get; init; }
+
+    // null = ran against the live/current config at the time — see AgentSelection. Kept
+    // alongside AgentId (not folded into a composite id) so AgentId always stays a real
+    // resolvable AgentRegistry id.
+    public int? Version { get; init; }
+
     public required string QuestionId { get; init; }
     public required int Repetition { get; init; }
 
@@ -53,6 +69,16 @@ public sealed record QuestionRunResult
     public long? JudgeInputTokens { get; init; }
     public long? JudgeOutputTokens { get; init; }
 
+    // Per-case cost estimates — same math MaverikSummaryBuilder already used for the per-agent
+    // aggregate (EstimateCost/EstimateToolCost, MaverikSummary.cs), just evaluated once per case
+    // instead of averaged/summed across a whole agent's cases. Null under the same conventions as
+    // the aggregate: EstCost is null when the model has no configured pricing or this case has no
+    // token usage; EstToolCost is 0 (not null) whenever the case evaluated at all, even with zero
+    // tool calls. Added so per-question reporting (the Compare Versions regression matrix and
+    // distribution strips) can show real cost instead of only tokens.
+    public decimal? EstCost { get; init; }
+    public decimal? EstToolCost { get; init; }
+
     // Set when the case blew up (LLM error, evaluator error, ...). An errored case is not
     // counted as evaluated; the run continues past it.
     public string? Error { get; init; }
@@ -64,7 +90,6 @@ public sealed record QuestionRunResult
 public sealed record RunStatus(
     string RunId,
     string SuiteId,
-    IReadOnlyList<string> AgentIds,
     int Repetitions,
     string State,                       // queued | running | completed | failed
     int TotalCases,
@@ -74,13 +99,24 @@ public sealed record RunStatus(
     DateTimeOffset? FinishedAt,
     IReadOnlyList<QuestionRunResult> Results,
     IReadOnlyList<string> JudgedMetrics,
+    // Defaults to one unversioned AgentSelection per distinct AgentId seen in Results — this is
+    // what makes a run.json persisted before agent versioning existed (missing this property
+    // entirely) still deserialize into exactly its old, unversioned behavior instead of crashing
+    // MaverikSummaryBuilder.Build with a null-reference. New runs always pass this explicitly
+    // (see Program.cs's POST /api/maverik/runs and MaverikRunner).
+    IReadOnlyList<AgentSelection> AgentSelections = null!,
     // Published incrementally as MaverikRunner resolves each agent's live catalog (see
-    // CapabilityBundleBuilder) — populated before that agent's first case runs. Defaults to an
-    // empty dict (same trailing-default-via-property-redeclaration trick as SuiteRunRecord.Results
-    // below) so existing RunStatus construction call sites don't need updating.
-    IReadOnlyDictionary<string, CapabilityBundle> CapabilityBundles = null!)
+    // CapabilityBundleBuilder) — populated before that agent's first case runs. Keyed by the
+    // whole AgentSelection (not just AgentId) so two versions of the same agent in one batch get
+    // distinct bundles. Defaults to an empty dict (same trailing-default-via-property-
+    // redeclaration trick as SuiteRunRecord.Results below) so existing RunStatus construction
+    // call sites don't need updating.
+    IReadOnlyDictionary<AgentSelection, CapabilityBundle> CapabilityBundles = null!)
 {
-    public IReadOnlyDictionary<string, CapabilityBundle> CapabilityBundles { get; init; } = CapabilityBundles ?? new Dictionary<string, CapabilityBundle>();
+    public IReadOnlyList<AgentSelection> AgentSelections { get; init; } = AgentSelections ??
+        Results.Select(r => new AgentSelection(r.AgentId, r.Version)).Distinct().ToList();
+
+    public IReadOnlyDictionary<AgentSelection, CapabilityBundle> CapabilityBundles { get; init; } = CapabilityBundles ?? new Dictionary<AgentSelection, CapabilityBundle>();
 }
 
 // The canonical set of metrics a run can be judged on — validated against by POST
@@ -111,9 +147,12 @@ public static class MaverikMetrics
 public sealed record SuiteRunRecord(
     string SuiteId,
     string AgentId,
+    // null = ran against the live/current config — see AgentSelection.
+    int? Version,
     AgentConfig AgentSnapshot,           // frozen copy of the config actually used, since
                                           // AgentRegistry is hot-reloadable and the same agentId
-                                          // can mean a different prompt tomorrow
+                                          // can mean a different prompt tomorrow (or, for a
+                                          // versioned run, is simply the pinned historical config)
     DateTimeOffset Timestamp,
     string SourceRunId,                        // the batch runId, to drill into full per-case results/run.json
     IReadOnlyList<string> JudgedMetrics,

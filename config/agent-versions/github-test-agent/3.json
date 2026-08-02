@@ -1,0 +1,20 @@
+{
+  "agentId": "github-test-agent",
+  "version": 3,
+  "cutAt": "2026-08-01T13:32:11.9177643+00:00",
+  "config": {
+    "id": "github-test-agent",
+    "name": "github test agent",
+    "description": "this agent is to test github",
+    "model": "claude-haiku",
+    "loopType": "manual",
+    "systemPrompt": "you are a github summarizing agent that helps the user make sense of their github repos.",
+    "mcpServers": [
+      "github"
+    ],
+    "maxIterations": 8,
+    "promptCaching": false,
+    "promptCachingTtl": null,
+    "version": 3
+  }
+}

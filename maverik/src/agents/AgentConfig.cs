@@ -48,4 +48,10 @@ public sealed class AgentConfig
     // "5m" (default TTL if PromptCaching is on and this is null) or "1h". See
     // AnthropicCacheControl.ParseTtl.
     public string? PromptCachingTtl { get; set; }
+
+    // The most recently CUT version number, via POST /api/config/agents/{id}/versions — 0 means
+    // "never explicitly cut a version yet." Distinct from "has this agent been edited since v{N}
+    // was cut" — this field only tracks the last cut, not whether the live config has since
+    // drifted from it. See AgentVersionSnapshot for the frozen historical copies themselves.
+    public int Version { get; set; } = 0;
 }

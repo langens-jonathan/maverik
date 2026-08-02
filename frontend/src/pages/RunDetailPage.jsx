@@ -1,11 +1,14 @@
-import { Fragment, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
+import { Link, useParams, useSearchParams } from "react-router-dom";
 import { api } from "../api.js";
 import { usePolling } from "../hooks/usePolling.js";
 import { BarRow } from "../components/BarRow.jsx";
 import { NotFound } from "../components/NotFound.jsx";
-
-const AGENT_COLORS = ["#1a56db", "#057a55", "#9333ea", "#c2410c", "#0e7490", "#be123c"];
+import { ChartCard } from "../components/ChartCard.jsx";
+import { colorForIndex } from "../charts/core/palette.js";
+import renderCriterionOutcomes, { TITLE as CRITERION_TITLE } from "../charts/criterionOutcomes.js";
+import renderToolUsageProfile, { TITLE as TOOL_PROFILE_TITLE } from "../charts/toolUsageProfile.js";
+import renderCostSplit, { TITLE as COST_SPLIT_TITLE } from "../charts/costSplit.js";
 
 function fmtMs(ms) {
   if (ms == null) return "—";
@@ -39,7 +42,76 @@ export function RunDetailPage() {
     2500,
     active || !!run
   );
-  const [expanded, setExpanded] = useState(null);
+  // Set, not a single key — a regression-matrix cell (Compare Versions' cross-navigation link,
+  // comparison/links.js's runCaseHref) aggregates across repetitions, so landing here can mean
+  // highlighting more than one row at once.
+  const [expanded, setExpanded] = useState(() => new Set());
+  const [suite, setSuite] = useState(null);
+
+  // Landing target for the regression matrix's cell links: ?agent=&version=&question=. version
+  // travels as the literal string "null" (not omitted) when the cell was the live/current
+  // config, so it's distinguishable from the param being absent entirely.
+  const [searchParams] = useSearchParams();
+  const highlightTarget = useMemo(() => {
+    const agent = searchParams.get("agent");
+    const question = searchParams.get("question");
+    if (!agent || !question) return null;
+    const versionRaw = searchParams.get("version");
+    const version = versionRaw == null || versionRaw === "null" ? null : Number(versionRaw);
+    return { agent, version, question };
+  }, [searchParams]);
+  const rowRefs = useRef({});
+  const appliedHighlightRef = useRef(false);
+
+  useEffect(() => {
+    if (!run?.suiteId) return;
+    setSuite(null);
+    api.getSuite(run.suiteId).then(setSuite).catch(() => setSuite(null));
+  }, [run?.suiteId]);
+
+  // Applies the cell-link highlight once results are available — gated by a ref (not just
+  // `!run`) so it fires exactly once, not on every poll tick while the run is still active, which
+  // would otherwise keep forcibly re-expanding/re-scrolling even after the user collapses a row.
+  useEffect(() => {
+    if (!run || !highlightTarget || appliedHighlightRef.current) return;
+    const matches = run.results.filter(
+      (c) => c.agentId === highlightTarget.agent && (c.version ?? null) === highlightTarget.version && c.questionId === highlightTarget.question
+    );
+    if (matches.length === 0) return;
+    appliedHighlightRef.current = true;
+    const keys = matches.map((c) => `${c.agentId}:${c.version ?? "live"}:${c.questionId}:${c.repetition}`);
+    setExpanded(new Set(keys));
+    requestAnimationFrame(() => rowRefs.current[keys[0]]?.scrollIntoView({ behavior: "smooth", block: "center" }));
+  }, [run, highlightTarget]);
+
+  // criteriaByQuestionId: only used by the per-criterion-outcomes chart — a suite that failed to
+  // load (deleted since the run, or still loading) just means that one chart falls back to an
+  // "unknown" bucket rather than breaking the whole page.
+  const criteriaByQuestionId = useMemo(() => {
+    if (!suite) return {};
+    return Object.fromEntries(suite.questions.map((q) => [q.id, q.criterion.type]));
+  }, [suite]);
+
+  // One entry per agent in the Comparison card, each carrying its own slice of run.results —
+  // the shared shape charts/criterionOutcomes.js and charts/toolUsageProfile.js both consume.
+  // Every agent is a peer here (unlike Compare Versions' baseline/candidates), so color is plain
+  // position-based colorForIndex, matching the Comparison card's own BarRow coloring above.
+  const chartAgents = useMemo(() => {
+    if (!summary || !run) return [];
+    return summary.agents.map((a, i) => ({
+      label: `${a.agentId}${a.version != null ? ` (v${a.version})` : ""}`,
+      color: colorForIndex(i),
+      results: run.results.filter((r) => r.agentId === a.agentId && r.version === a.version),
+    }));
+  }, [summary, run]);
+
+  const costSplitData = useMemo(() => {
+    if (!summary) return null;
+    return {
+      agentCost: summary.agents.reduce((sum, a) => sum + (a.estCostTotal ?? 0), 0),
+      judgeCost: summary.judgeOverhead?.estCost ?? null,
+    };
+  }, [summary]);
 
   if (runError?.status === 404) return <NotFound message={`No run '${runId}'.`} />;
   if (runError) return <p className="error-text">Failed to load run: {runError.message}</p>;
@@ -80,10 +152,13 @@ export function RunDetailPage() {
         <div className="card">
           <h3>Comparison</h3>
           {summary.agents.map((a, i) => {
-            const color = AGENT_COLORS[i % AGENT_COLORS.length];
+            const color = colorForIndex(i);
             return (
-              <div className="agent-block" key={a.agentId}>
-                <h4>{a.agentId}</h4>
+              <div className="agent-block" key={`${a.agentId}:${a.version ?? "live"}`}>
+                <h4>
+                  {a.agentId}
+                  {a.version != null && <span className="version-badge">v{a.version}</span>}
+                </h4>
                 <BarRow label="Pass rate" value={a.passRate} max={1} display={fmtPct(a.passRate)} color={color} />
                 <BarRow
                   label="Avg duration"
@@ -158,6 +233,33 @@ export function RunDetailPage() {
         </div>
       )}
 
+      {chartAgents.length > 0 && (
+        <ChartCard
+          title={CRITERION_TITLE}
+          filename={`criterion-outcomes-${run.runId}`}
+          data={{ agents: chartAgents, criteriaByQuestionId }}
+          render={renderCriterionOutcomes}
+        />
+      )}
+
+      {chartAgents.length > 0 && (
+        <ChartCard
+          title={TOOL_PROFILE_TITLE}
+          filename={`tool-usage-profile-${run.runId}`}
+          data={{ agents: chartAgents }}
+          render={renderToolUsageProfile}
+        />
+      )}
+
+      {costSplitData && (
+        <ChartCard
+          title={COST_SPLIT_TITLE}
+          filename={`cost-split-${run.runId}`}
+          data={costSplitData}
+          render={renderCostSplit}
+        />
+      )}
+
       <div className="card">
         <h3>Cases ({run.results.length})</h3>
         <table>
@@ -175,12 +277,33 @@ export function RunDetailPage() {
           </thead>
           <tbody>
             {run.results.map((c, i) => {
-              const key = `${c.agentId}:${c.questionId}:${c.repetition}`;
-              const isOpen = expanded === key;
+              const key = `${c.agentId}:${c.version ?? "live"}:${c.questionId}:${c.repetition}`;
+              const isOpen = expanded.has(key);
+              const isHighlighted =
+                highlightTarget != null &&
+                c.agentId === highlightTarget.agent &&
+                (c.version ?? null) === highlightTarget.version &&
+                c.questionId === highlightTarget.question;
+              function toggle() {
+                setExpanded((prev) => {
+                  const next = new Set(prev);
+                  if (next.has(key)) next.delete(key);
+                  else next.add(key);
+                  return next;
+                });
+              }
               return (
                 <Fragment key={key}>
-                  <tr onClick={() => setExpanded(isOpen ? null : key)} style={{ cursor: "pointer" }}>
-                    <td className="mono">{c.agentId}</td>
+                  <tr
+                    ref={(el) => (rowRefs.current[key] = el)}
+                    onClick={toggle}
+                    className={isHighlighted ? "is-highlighted" : undefined}
+                    style={{ cursor: "pointer" }}
+                  >
+                    <td className="mono">
+                      {c.agentId}
+                      {c.version != null ? ` (v${c.version})` : ""}
+                    </td>
                     <td className="mono">{c.questionId}</td>
                     <td className="mono">{c.repetition}</td>
                     <td className="mono">{fmtMs(c.durationMs)}</td>

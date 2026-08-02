@@ -12,6 +12,10 @@
         {
           "ref": "reliability-by-agent",
           "title": "Error rate & iteration-limit hits by agent"
+        },
+        {
+          "ref": "runs-over-time-iteration-limit-rate",
+          "title": "Iteration-limit-hit rate over time"
         }
       ]
     },

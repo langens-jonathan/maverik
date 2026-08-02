@@ -320,6 +320,11 @@ textarea.prompt-editor { min-height: 320px; }
 
 .field-hint { font-size: 0.74rem; color: var(--muted); margin-top: 0.25rem; }
 
+.agent-selection-groups { display: flex; flex-direction: column; gap: 0.7rem; margin: 0.3rem 0 0.7rem; }
+.agent-selection-group { border: 1px solid var(--border-faint); border-radius: var(--radius); padding: 0.6rem 0.75rem; }
+.agent-selection-group-name { font-size: 0.85rem; color: var(--text-strong); margin-bottom: 0.3rem; }
+.agent-selection-group .checkbox-list { margin: 0; }
+
 .checkbox-list { display: flex; flex-wrap: wrap; gap: 0.9rem; margin: 0.3rem 0; }
 .checkbox-list label {
   display: flex;
@@ -425,6 +430,7 @@ progress::-webkit-progress-value { background: var(--accent); border-radius: 3px
 .run-picker { display: flex; flex-direction: column; gap: 0.35rem; margin-bottom: 1rem; font-size: 0.85rem; }
 .run-picker-row { display: flex; align-items: center; gap: 0.5rem; cursor: pointer; }
 .visualization { margin-top: 0.5rem; }
+.visualization-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; }
 .visualization-container { overflow-x: auto; }
 /* Only meaningful inside a flex row (.viz-row) — a no-op everywhere .visualization is just a
    plain block child, so these are safe to apply unconditionally. */
@@ -432,6 +438,13 @@ progress::-webkit-progress-value { background: var(--accent); border-radius: 3px
 .visualization.layout-full { flex: 1 1 100%; }
 
 .viz-row { display: flex; flex-wrap: wrap; gap: 1.5rem; align-items: flex-start; }
+/* Compare Versions' distribution strips (plain .chart-card children, not the sandboxed
+   .visualization wrapper above) — flex-basis lets two sit side by side and grow to fill any
+   leftover row width, wrapping to one per row once the viewport can't fit two. margin-bottom is
+   moved from the individual cards (which would otherwise leave uneven gaps within the row) to the
+   row itself, matching a standalone .chart-card's spacing to whatever comes next. */
+.viz-row .chart-card { flex: 1 1 460px; margin-bottom: 0; }
+div.viz-row { margin-bottom: 1.1rem; }
 
 /* Widened from 1250px to keep 2 half-width visualizations (REPORT_HALF_WIDTH in
    ReportViewPage.jsx) fitting side by side now that they can carry a collapsible right-side
@@ -491,15 +504,79 @@ main.wide { max-width: 1360px; }
   border-radius: var(--radius);
   padding: 1rem 1.1rem;
   margin-bottom: 1rem;
+  transition: border-color 0.2s, box-shadow 0.2s;
 }
+/* Landing target for cross-navigation links (Compare Versions' version picker + Pareto scatter
+   points, both #<agentId> / #<agentId>@<version> anchors) — a temporary accent ring so the row
+   you were sent to is unambiguous among a possibly-long agent list. */
+.config-row.is-highlighted { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+/* Same idea for a <tr> landing target (RunDetailPage's cases table, from a regression-matrix
+   cell link) — a box-shadow ring doesn't read on a table row, so this is a background wash plus
+   a left accent bar instead. */
+tr.is-highlighted { background: var(--accent-wash); box-shadow: inset 3px 0 0 var(--accent); }
 .config-row-header { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
 .config-row-header h4 { margin: 0; font-family: var(--font-mono); font-size: 0.88rem; color: var(--text-strong); }
 .config-row-header button { padding: 0.25rem 0.6rem; font-size: 0.72rem; }
 .config-row-header-actions { display: flex; gap: 0.5rem; }
 
+.version-badge {
+  margin-left: 0.6rem;
+  padding: 0.05rem 0.5rem;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--surface-raised);
+  color: var(--muted);
+  font-size: 0.68rem;
+  font-weight: 400;
+  vertical-align: middle;
+}
+
+.version-history { margin-top: 0.75rem; }
+.version-history summary { cursor: pointer; font-size: 0.82rem; color: var(--muted); }
+.version-history summary:hover { color: var(--text); }
+.version-history-body { margin-top: 0.6rem; }
+
+.version-history-table { width: 100%; font-size: 0.82rem; }
+.version-history-table th { text-align: left; color: var(--muted); font-weight: 400; }
+.version-history-table td { padding: 0.3rem 0; }
+.version-history-table button { margin-right: 0.4rem; padding: 0.2rem 0.55rem; font-size: 0.7rem; }
+
+.version-snapshot-view { margin-top: 0.75rem; border-top: 1px solid var(--border-faint); padding-top: 0.6rem; }
+.version-snapshot-json {
+  max-height: 320px;
+  overflow: auto;
+  background: var(--surface);
+  border: 1px solid var(--border-faint);
+  border-radius: var(--radius);
+  padding: 0.6rem;
+  font-size: 0.76rem;
+}
+
 .field-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 0 1rem; }
 
 .kv-row { display: grid; grid-template-columns: 1fr 1fr auto; gap: 0.5rem; align-items: center; margin-bottom: 0.4rem; }
 .kv-row button { padding: 0.3rem 0.55rem; font-size: 0.72rem; }
+
+/* Compare Versions page */
+.version-picker-table { width: 100%; font-size: 0.86rem; }
+.version-picker-table th { text-align: left; color: var(--muted); font-weight: 400; font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.04em; padding-bottom: 0.4rem; }
+.version-picker-table td { padding: 0.4rem 0.6rem 0.4rem 0; border-top: 1px solid var(--border-faint); }
+.version-picker-table td:first-child, .version-picker-table th:first-child { padding-left: 0.1rem; }
+.version-picker-table tr.is-baseline td { color: var(--text-strong); }
+
+.chart-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 1.1rem 1.3rem 1.3rem;
+  margin-bottom: 1.1rem;
+}
+.chart-card-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; margin-bottom: 0.7rem; }
+.chart-card-header h4 { margin: 0; color: var(--text-strong); font-size: 0.95rem; font-weight: 600; font-family: var(--font-display); }
+.chart-card-actions { display: flex; gap: 0.4rem; flex-shrink: 0; }
+.chart-card-actions button { padding: 0.22rem 0.55rem; font-size: 0.7rem; }
+.chart-card-body { width: 100%; overflow-x: auto; }
+
+.empty-chart-state { display: flex; align-items: center; justify-content: center; min-height: 120px; color: var(--muted); font-size: 0.88rem; }
 
 .add-row-btn { margin-top: 0.4rem; }

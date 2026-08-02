@@ -1,0 +1,21 @@
+{
+  "agentId": "coding-expert",
+  "version": 4,
+  "cutAt": "2026-08-01T13:42:32.5357185+00:00",
+  "config": {
+    "id": "coding-expert",
+    "name": "Coding Expert",
+    "description": "",
+    "model": "claude-haiku",
+    "loopType": "manual",
+    "systemPrompt": "Answer only with numbers, no padding or additional text.",
+    "mcpServers": [
+      "github",
+      "microsoft-learn"
+    ],
+    "maxIterations": 8,
+    "promptCaching": false,
+    "promptCachingTtl": null,
+    "version": 4
+  }
+}
