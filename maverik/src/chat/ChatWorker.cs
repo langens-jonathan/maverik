@@ -60,13 +60,38 @@ public sealed class ChatWorker(
             : conversations.GetOrCreate(job.SessionId, agent.SystemPrompt!);
         history.Add(new ChatMessage(ChatRole.User, job.Message));
 
+        // Context-size management (see ContextCutoff). ResolveConfig, unlike Resolve, returns
+        // null for an unknown/misconfigured model rather than throwing — a chat turn shouldn't
+        // fail just because pricing/context-window metadata is missing.
+        var modelConfig = models.ResolveConfig(agent.Model);
+        var contextStrategy = ContextManagementStrategyParser.Parse(agent.ContextManagementStrategy);
+        var effectiveMaxContextTokens = agent.SimulatedMaxContextTokens ?? modelConfig?.ContextWindowTokens;
+
         var result = await strategy.RunTurnAsync(new TurnRequest(
             chat,
             history,
             mcp.ToolsForServers(agent.McpServers),
             agent.MaxIterations,
             // SyncProgress keeps progress lines in emit order (see LoopStrategy.cs).
-            new SyncProgress<string>(line => outbox.Add(job.SessionId, line))), ct);
+            new SyncProgress<string>(line => outbox.Add(job.SessionId, line)),
+            ContextStrategy: contextStrategy,
+            EffectiveMaxContextTokens: effectiveMaxContextTokens,
+            LastKnownContextTokens: conversations.GetLastKnownContextTokens(job.SessionId)), ct);
+
+        // Carry this turn's real usage forward so the next turn's very first call (before it has
+        // any usage of its own) has something to check against — see ConversationStore.
+        conversations.SetLastKnownContextTokens(job.SessionId, result.PeakContextTokens);
+
+        // Same signal MaverikRunner now surfaces on QuestionRunResult: warn whenever the real
+        // peak exceeded the ceiling, independent of contextStrategy — a chat turn under
+        // "none" got zero indication of this before. Skipped when a trim already fired this
+        // turn (ContextTrimCount > 0), since that already reported its own note and this turn's
+        // peak was measured AFTER trimming, so it's no longer meaningfully "exceeded."
+        if (result.ContextTrimCount == 0 && result.PeakContextTokens is { } peak
+            && effectiveMaxContextTokens is { } max && peak > max)
+        {
+            outbox.Add(job.SessionId, "(warning: context window exceeded)");
+        }
 
         outbox.Add(job.SessionId, result.HitIterationLimit
             ? "(stopped: hit the tool-iteration limit.)"

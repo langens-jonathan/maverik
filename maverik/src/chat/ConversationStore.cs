@@ -14,6 +14,12 @@ public sealed class ConversationStore
 {
     private readonly ConcurrentDictionary<string, List<ChatMessage>> _conversations = new();
 
+    // The session's context size as of the end of its last turn (TurnResult.PeakContextTokens),
+    // so ContextCutoff has something real to compare against before a new turn's very first
+    // GetResponseAsync call — a fresh call has no usage of its own yet at that point. Null until
+    // at least one turn has completed with real usage. See ChatWorker/ContextCutoff.
+    private readonly ConcurrentDictionary<string, long?> _lastKnownContextTokens = new();
+
     // Returns the session's history, creating it seeded with the given system prompt (the agent's)
     // on first use. The prompt only applies at creation — a later call with a different prompt is
     // ignored for an existing session (agents don't switch mid-session yet).
@@ -28,4 +34,10 @@ public sealed class ConversationStore
     // message rather than a plain string.
     public List<ChatMessage> GetOrCreate(string sessionId, ChatMessage systemMessage) =>
         _conversations.GetOrAdd(sessionId, _ => new List<ChatMessage> { systemMessage });
+
+    public long? GetLastKnownContextTokens(string sessionId) =>
+        _lastKnownContextTokens.GetValueOrDefault(sessionId);
+
+    public void SetLastKnownContextTokens(string sessionId, long? tokens) =>
+        _lastKnownContextTokens[sessionId] = tokens;
 }

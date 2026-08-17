@@ -6,7 +6,8 @@
       "provider": "anthropic",
       "model": "claude-haiku-4-5",
       "apiKey": "${ANTHROPIC_API_KEY}",
-      "supportsTools": true
+      "supportsTools": true,
+      "contextWindowTokens": 200000
     },
     {
       "id": "gpt-4o",

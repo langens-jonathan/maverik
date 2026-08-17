@@ -330,4 +330,29 @@ public class MaverikSummaryBuilderTests
         Assert.Equal("sha256:abc123", agent1.CapabilityDigest);
         Assert.Equal(3, agent1.CapabilityToolCount);
     }
+
+    [Fact]
+    public void Build_ConfiguredContextWindowTokens_ReflectsResolvedModel_WhenSet()
+    {
+        var model = new LLMModelConfig { Id = "windowed-model", ContextWindowTokens = 128_000 };
+        using var h = NewHarness("suite-1", [Agent("agent1", "windowed-model")], [model]);
+        var results = new List<QuestionRunResult> { new() { AgentId = "agent1", QuestionId = "q1", Repetition = 1, Passed = true } };
+
+        var summary = MaverikSummaryBuilder.Build(Run("suite-1", ["agent1"], results), h.Suites, h.Agents, h.Models, h.Mcp, h.ToolCosts, h.ConfigFiles);
+        var agent1 = summary.Agents.Single(a => a.AgentId == "agent1");
+
+        Assert.Equal(128_000, agent1.ConfiguredContextWindowTokens);
+    }
+
+    [Fact]
+    public void Build_ConfiguredContextWindowTokens_IsNull_WhenModelDoesNotSetIt()
+    {
+        using var h = NewHarness("suite-1", [Agent("agent1", "unpriced-model")], [new LLMModelConfig { Id = "unpriced-model" }]);
+        var results = new List<QuestionRunResult> { new() { AgentId = "agent1", QuestionId = "q1", Repetition = 1, Passed = true } };
+
+        var summary = MaverikSummaryBuilder.Build(Run("suite-1", ["agent1"], results), h.Suites, h.Agents, h.Models, h.Mcp, h.ToolCosts, h.ConfigFiles);
+        var agent1 = summary.Agents.Single(a => a.AgentId == "agent1");
+
+        Assert.Null(agent1.ConfiguredContextWindowTokens);
+    }
 }

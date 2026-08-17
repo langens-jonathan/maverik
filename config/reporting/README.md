@@ -78,12 +78,12 @@ minimal working examples — same contract, different rendering choice.
 
 ## Default visualizations
 
-MAVERIK ships 35 default visualizations. 28 are chart-shaped — exportable one at a time as PNG or
-SVG, same as any chart in the Visualizations tab. 7 are table-shaped (`metrics-by-agent.js`,
+MAVERIK ships 36 default visualizations. 28 are chart-shaped — exportable one at a time as PNG or
+SVG, same as any chart in the Visualizations tab. 8 are table-shaped (`metrics-by-agent.js`,
 `metrics-by-run.js`, `question-details.js`, `question-pass-rate-matrix.js`,
-`reliability-by-agent.js`, `capability-by-agent.js`, `results-table.js`) — exportable one at a time
-too, but PNG only, since an HTML table has no natural vector-graphics form (see
-docs/chart-design-system.md's `exportElementAsPng`).
+`reliability-by-agent.js`, `capability-by-agent.js`, `results-table.js`,
+`context-window-sizing.js`) — exportable one at a time too, but PNG only, since an HTML table has
+no natural vector-graphics form (see docs/chart-design-system.md's `exportElementAsPng`).
 
 ### The 9 outcome parameters
 
@@ -102,7 +102,9 @@ calls, peak context tokens, token/tool/overall cost):
   for agents without `promptCaching` enabled) averaged per agent.
 - `metrics-by-run.js` — table, all 9 metrics per individual run record (no aggregation).
 - `question-details.js` — table, one row per question/case, flattened out of every record's
-  `results` field (see above).
+  `results` field (see above), including whether that specific case's real peak context exceeded
+  its agent's configured/simulated window (independent of whether any `contextManagementStrategy`
+  was enabled to act on it).
 
 `<metric>` is one of: `correctness`, `duration`, `input-tokens`, `output-tokens`, `tool-calls`,
 `context-window`, `token-cost`, `tool-cost`, `overall-cost`. These are plain files like any other
@@ -133,6 +135,14 @@ outside the original 9 parameters:
 - `peak-context-ceiling-by-agent.js` — bar chart, the *worst-case* (not average) peak context
   tokens per agent — an agent can look comfortably clear of the context limit on average while
   still having occasional near-miss cases the average hides.
+- `context-window-sizing.js` — table, turns that same worst-case number into an actionable
+  recommendation for right-sizing a local model server's `--ctx-size`/`n_ctx` (and therefore its
+  RAM): the observed peak, a recommended window (peak + 20% headroom, rounded up to the next
+  power of two), the window currently configured on that agent's model
+  (`LLMModelConfig.ContextWindowTokens`, via `AgentSummary.configuredContextWindowTokens`), and a
+  flag when real observed usage already exceeded it. Deliberately reports tokens only, no RAM
+  estimate — KV-cache bytes-per-token depends on model architecture details nothing here can
+  discover; feed the token count into your own model-specific hardware-sizing tool.
 - `tool-call-frequency.js` — bar chart, call count per tool name, summed across every case.
 - `iteration-budget-utilization.js` — bar chart, avg(iterations / that record's own
   `agentSnapshot.maxIterations`) per agent — a near-miss signal before an agent ever actually hits
@@ -141,8 +151,10 @@ outside the original 9 parameters:
   `reliability-by-agent.js`'s single collapsed number: fraction of evaluated cases that hit the
   iteration limit, one line per agent, over time, with the same config-change markers as the
   9-metric `runs-over-time-*.js` family.
-- `reliability-by-agent.js` — table of error rate and iteration-limit-hit rate per agent, the
-  reliability signals a pass-rate number alone doesn't explain.
+- `reliability-by-agent.js` — table of error rate, iteration-limit-hit rate, and context-window-
+  exceeded rate per agent, the reliability signals a pass-rate number alone doesn't explain. The
+  context-window-exceeded rate answers "would this agent's real traffic have overflowed a given
+  window" directly, even for agents with no context management strategy enabled.
 - `capability-by-agent.js` — table, each agent's current tool-catalog identity (tool count + a
   content-hashed digest), plus whether that digest stayed stable or changed across the selection.
 

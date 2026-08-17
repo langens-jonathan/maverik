@@ -298,6 +298,7 @@ td { color: var(--text); }
 .badge.pass { background: var(--ok-wash); color: var(--ok); }
 .badge.fail { background: var(--bad-wash); color: var(--bad); }
 .badge.error { background: var(--warn-wash); color: var(--warn); }
+.badge.warn { background: var(--warn-wash); color: var(--warn); }
 .badge.state-queued { background: var(--border); color: var(--muted); }
 .badge.state-running { background: var(--info-wash); color: var(--info); }
 .badge.state-completed { background: var(--ok-wash); color: var(--ok); }

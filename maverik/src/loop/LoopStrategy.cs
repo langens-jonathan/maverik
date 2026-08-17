@@ -9,6 +9,25 @@ namespace McpHost.Loop;
 // "how the tool loop is driven". Both paths must execute the same loop code — that is what
 // makes benchmark results predictive of chat behavior.
 
+// The agents.json contextManagementStrategy value, resolved to a real enum. None is the default
+// (does nothing — unchanged from before this feature existed). Compaction is currently
+// unimplemented for every provider and falls back to Cutoff's mechanism (see ContextCutoff and
+// RunTurnAsync below), reported distinctly so it's visibly a fallback rather than silently
+// identical.
+public enum ContextManagementStrategy { None, Cutoff, Compaction }
+
+public static class ContextManagementStrategyParser
+{
+    // Same null-is-valid, unknown-value-throws convention as AnthropicCacheControl.ParseTtl.
+    public static ContextManagementStrategy Parse(string? value) => value switch
+    {
+        null or "" or "none" => ContextManagementStrategy.None,
+        "cutoff" => ContextManagementStrategy.Cutoff,
+        "compaction" => ContextManagementStrategy.Compaction,
+        _ => throw new ArgumentException($"Unknown contextManagementStrategy '{value}'; expected \"cutoff\" or \"compaction\"."),
+    };
+}
+
 // Everything a loop needs to run one full turn, decoupled from sessions/outboxes.
 public sealed record TurnRequest(
     IChatClient Chat,
@@ -21,7 +40,18 @@ public sealed record TurnRequest(
     // breakpoint on the last tool. Null (the default) means "send Tools as-is", so every
     // existing call site is unaffected. Never used for dispatch — see InvokeToolAsync — because
     // an overridden entry is a wire-only wrapper with no InvokeAsync.
-    IReadOnlyList<AITool>? PresentationTools = null);
+    IReadOnlyList<AITool>? PresentationTools = null,
+    // Context-size management (see ContextCutoff). EffectiveMaxContextTokens is the resolved
+    // ceiling (AgentConfig.SimulatedMaxContextTokens ?? LLMModelConfig.ContextWindowTokens);
+    // null means "unknown," under which the strategy silently no-ops regardless of its value.
+    // LastKnownContextTokens is the caller's best prior real measurement — e.g. a chat session's
+    // usage from its previous turn — used only to decide whether to trim before this call's very
+    // first iteration, since no response has come back yet to measure this call's own usage.
+    // Null (a fresh session/case) means there's nothing to compare against yet, so iteration 1
+    // never trims; later iterations within the same call use their own running usage instead.
+    ContextManagementStrategy ContextStrategy = ContextManagementStrategy.None,
+    int? EffectiveMaxContextTokens = null,
+    long? LastKnownContextTokens = null);
 
 // What a turn produced, plus the metrics MAVERIK records per case.
 public sealed record TurnResult(
@@ -34,7 +64,8 @@ public sealed record TurnResult(
     bool HitIterationLimit,
     long? PeakContextTokens,            // largest single round-trip's (input+output), not summed — see RunTurnAsync
     long? CacheReadInputTokens = null,      // Anthropic prompt-caching: tokens served from cache (already counted within InputTokens)
-    long? CacheCreationInputTokens = null); // Anthropic prompt-caching: tokens spent writing a new cache entry (NOT counted within InputTokens)
+    long? CacheCreationInputTokens = null,  // Anthropic prompt-caching: tokens spent writing a new cache entry (NOT counted within InputTokens)
+    int ContextTrimCount = 0);              // how many times ContextCutoff actually trimmed history during this turn
 
 public interface ILoopStrategy
 {
@@ -77,9 +108,27 @@ public abstract class LoopStrategyBase : ILoopStrategy
         long? inputTokens = null, outputTokens = null, peakContextTokens = null;
         long? cacheReadTokens = null, cacheCreationTokens = null;
         var toolNames = new List<string>();
+        var contextTrimCount = 0;
 
         for (var iteration = 1; iteration <= request.MaxIterations; iteration++)
         {
+            // Check before sending, not after: this is the last point where trimming can still
+            // change what's about to go over the wire. Iteration 1 has no usage measured yet in
+            // THIS call, so it falls back to the caller's last known figure (e.g. a chat
+            // session's previous turn) — later iterations use their own running peakContextTokens
+            // instead, which is always more current than anything the caller passed in.
+            if (request.ContextStrategy != ContextManagementStrategy.None)
+            {
+                var currentEstimate = iteration == 1 ? request.LastKnownContextTokens : peakContextTokens;
+                if (ContextCutoff.TrimIfNeeded(request.History, currentEstimate, request.EffectiveMaxContextTokens))
+                {
+                    contextTrimCount++;
+                    request.Progress?.Report(request.ContextStrategy == ContextManagementStrategy.Compaction
+                        ? "(context: compaction not yet implemented for this provider, trimmed oldest messages instead)"
+                        : "(context: trimmed oldest messages to stay under the context limit)");
+                }
+            }
+
             var response = await request.Chat.GetResponseAsync(request.History, options, ct);
 
             // Sum usage across every round-trip of the turn. Totals stay null when no response
@@ -121,7 +170,7 @@ public abstract class LoopStrategyBase : ILoopStrategy
             if (calls.Count == 0)
                 return new TurnResult(response.Text, iteration, toolNames.Count, toolNames,
                                       inputTokens, outputTokens, HitIterationLimit: false, peakContextTokens,
-                                      cacheReadTokens, cacheCreationTokens);
+                                      cacheReadTokens, cacheCreationTokens, contextTrimCount);
 
             toolNames.AddRange(calls.Select(c => c.Name));
 
@@ -134,7 +183,7 @@ public abstract class LoopStrategyBase : ILoopStrategy
 
         return new TurnResult("", request.MaxIterations, toolNames.Count, toolNames,
                               inputTokens, outputTokens, HitIterationLimit: true, peakContextTokens,
-                              cacheReadTokens, cacheCreationTokens);
+                              cacheReadTokens, cacheCreationTokens, contextTrimCount);
     }
 
     // Dispatch one call to the owning MCP client. Names resolve against the agent's allowed

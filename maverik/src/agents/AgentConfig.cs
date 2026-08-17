@@ -54,4 +54,18 @@ public sealed class AgentConfig
     // was cut" — this field only tracks the last cut, not whether the live config has since
     // drifted from it. See AgentVersionSnapshot for the frozen historical copies themselves.
     public int Version { get; set; } = 0;
+
+    // How this agent handles a growing conversation approaching the model's context window:
+    // null/"none" (default, does nothing — unchanged from before this feature existed), "cutoff"
+    // (drop the oldest messages once usage crosses 90% of the effective max — see ContextCutoff),
+    // or "compaction" (delegate to the LLM's own native context-compaction feature where the
+    // provider has one — currently unimplemented for every provider and falls back to "cutoff"
+    // with a distinct log/outbox note rather than silently doing nothing).
+    public string? ContextManagementStrategy { get; set; }
+
+    // Overrides the resolved model's real LLMModelConfig.ContextWindowTokens when set, so a
+    // strategy above can be exercised (and its effect observed) on a model whose real window is
+    // much larger than the value being tested — e.g. force a 200k-token model to behave as if it
+    // only had 50k. Null means "use the model's real window."
+    public int? SimulatedMaxContextTokens { get; set; }
 }

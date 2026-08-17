@@ -29,4 +29,11 @@ public sealed class LLMModelConfig
     public decimal? CacheWriteMultiplier { get; set; }     // 5-minute TTL, e.g. 1.25
     public decimal? CacheWrite1hMultiplier { get; set; }   // 1-hour TTL, e.g. 2.0
     public decimal? CacheReadMultiplier { get; set; }      // e.g. 0.1
+
+    // The model's real/nominal context window in tokens, per the provider's own docs — nothing in
+    // this codebase can discover this, so it's manual entry, same convention as the pricing fields
+    // above. Null means "unknown," under which AgentConfig.ContextManagementStrategy silently
+    // no-ops regardless of what's configured (see ContextCutoff) — same "unknown fact -> harmless
+    // no-op" stance pricing already takes.
+    public int? ContextWindowTokens { get; set; }
 }

@@ -34,7 +34,12 @@ public sealed record AgentSummary(
     // From RunStatus.CapabilityBundles — null only if the run predates this field (old persisted
     // run.json) or the agent errored before its bundle was captured. See CapabilityBundle.
     string? CapabilityDigest,
-    int? CapabilityToolCount);
+    int? CapabilityToolCount,
+    // The resolved model's LLMModelConfig.ContextWindowTokens at the time this summary was built
+    // — null when that's unset (unknown) or the model failed to resolve. Paired with
+    // MaxPeakContextTokens above by context-window-sizing.js to flag when real observed usage
+    // already exceeded what's currently configured.
+    int? ConfiguredContextWindowTokens = null);
 
 // Judge-model token/cost overhead across the whole run — tracked separately so it never pollutes
 // an agent's own metrics.
@@ -136,7 +141,7 @@ public static class MaverikSummaryBuilder
             agentId, version, passRate, avgDurationMs, avgInputTokens, avgOutputTokens, avgIterations, avgToolCalls,
             avgPeakContextTokens, maxPeakContextTokens, avgCacheReadInputTokens, avgCacheCreationInputTokens,
             estCostPerQuestion, estCostTotal, estToolCostPerQuestion, estToolCostTotal, estOverallCostTotal,
-            errors, casesWithoutUsage, bundle?.Digest, bundle?.ToolCount);
+            errors, casesWithoutUsage, bundle?.Digest, bundle?.ToolCount, pricing?.ContextWindowTokens);
     }
 
     // Per-criterion judgeModel overrides aren't recorded per-case, only tokens — so the suite's
