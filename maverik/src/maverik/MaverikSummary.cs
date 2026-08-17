@@ -48,10 +48,20 @@ public sealed record JudgeOverheadSummary(
     long OutputTokens,
     decimal? EstCost);
 
+// Simulated-user-model token/cost overhead across the whole run (Multiturn questions with
+// UserTurnMode "simulated" — see UserSimulator) — same "tracked separately, never pollutes an
+// agent's own metrics" shape as JudgeOverheadSummary above. All zero/null for a run with no
+// simulated multi-turn questions, unchanged from before this feature existed.
+public sealed record SimulatorOverheadSummary(
+    long InputTokens,
+    long OutputTokens,
+    decimal? EstCost);
+
 public sealed record RunSummary(
     string RunId,
     IReadOnlyList<AgentSummary> Agents,
-    JudgeOverheadSummary JudgeOverhead);
+    JudgeOverheadSummary JudgeOverhead,
+    SimulatorOverheadSummary SimulatorOverhead);
 
 // Builds a RunSummary from a RunStatus snapshot. Stateless, like CriterionEvaluator — reused by
 // both the live GET .../summary endpoint and MaverikResultsWriter (which persists it to
@@ -70,7 +80,7 @@ public static class MaverikSummaryBuilder
                 run.CapabilityBundles.GetValueOrDefault(sel)))
             .ToList();
 
-        return new RunSummary(run.RunId, agentSummaries, BuildJudgeOverhead(run, suites, models));
+        return new RunSummary(run.RunId, agentSummaries, BuildJudgeOverhead(run, suites, models), BuildSimulatorOverhead(run, suites, models));
     }
 
     private static AgentSummary BuildAgentSummary(
@@ -160,6 +170,25 @@ public static class MaverikSummaryBuilder
         }
 
         return new JudgeOverheadSummary(inputTokens, outputTokens, estCost);
+    }
+
+    // Mirrors BuildJudgeOverhead exactly, same "per-question userSimulatorModel overrides aren't
+    // recorded per-case, only tokens, so pricing uses the suite's top-level default" caveat: a
+    // run whose questions mix simulator models will get an approximate cost here; tokens
+    // themselves are always exact.
+    private static SimulatorOverheadSummary BuildSimulatorOverhead(RunStatus run, MaverikSuiteRegistry suites, LLMModelRegistry models)
+    {
+        var inputTokens = run.Results.Sum(c => c.SimulatorInputTokens ?? 0);
+        var outputTokens = run.Results.Sum(c => c.SimulatorOutputTokens ?? 0);
+
+        decimal? estCost = null;
+        var pricing = models.ResolveConfig(suites.Resolve(run.SuiteId).UserSimulatorModel);
+        if (pricing is { InputPricePerMTok: not null, OutputPricePerMTok: not null } && (inputTokens > 0 || outputTokens > 0))
+        {
+            estCost = TokenCost(inputTokens, outputTokens, pricing.InputPricePerMTok!.Value, pricing.OutputPricePerMTok!.Value);
+        }
+
+        return new SimulatorOverheadSummary(inputTokens, outputTokens, estCost);
     }
 
     // Per-case cost, given raw usage values rather than a QuestionRunResult — lets MaverikRunner

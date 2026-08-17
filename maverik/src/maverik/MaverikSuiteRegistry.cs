@@ -101,7 +101,10 @@ public sealed class MaverikSuiteRegistry
 
     // All the ways a suite file can be wrong, each with a message that names the file and the
     // offending question so the fix is obvious.
-    private static void Validate(MaverikSuite suite, string file, AgentRegistry agents, LLMModelRegistry models)
+    // internal (not private) so tests can exercise validation directly, without needing a
+    // filesystem-backed registry — same reasoning CriterionEvaluator.ParseVerdict/Truncate are
+    // internal static for.
+    internal static void Validate(MaverikSuite suite, string file, AgentRegistry agents, LLMModelRegistry models)
     {
         if (string.IsNullOrWhiteSpace(suite.Id))
             throw Bad(file, "has no 'id'.");
@@ -163,6 +166,33 @@ public sealed class MaverikSuiteRegistry
                         throw Bad(file, $"question '{question.Id}' judge model '{judgeModel}' does not resolve: {ex.Message}");
                     }
                     break;
+            }
+
+            if (question.Multiturn)
+            {
+                switch (question.UserTurnMode?.ToLowerInvariant())
+                {
+                    case "scripted":
+                        if (question.ScriptedUserTurns is not { Count: > 0 })
+                            throw Bad(file, $"question '{question.Id}' is multiturn 'scripted' but has no 'scriptedUserTurns'.");
+                        break;
+
+                    case "simulated":
+                        var simulatorModel = question.UserSimulatorModel ?? suite.UserSimulatorModel;
+                        if (string.IsNullOrWhiteSpace(simulatorModel))
+                            throw Bad(file, $"question '{question.Id}' is multiturn 'simulated' but neither the " +
+                                            "question nor the suite sets a 'userSimulatorModel'.");
+                        try { models.Resolve(simulatorModel); }
+                        catch (Exception ex)
+                        {
+                            throw Bad(file, $"question '{question.Id}' user simulator model '{simulatorModel}' does not resolve: {ex.Message}");
+                        }
+                        break;
+
+                    default:
+                        throw Bad(file, $"question '{question.Id}' is multiturn but has unknown userTurnMode " +
+                                        $"'{question.UserTurnMode}' (expected 'scripted' or 'simulated').");
+                }
             }
         }
 

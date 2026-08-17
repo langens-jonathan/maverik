@@ -12,6 +12,12 @@ namespace McpHost.Maverik;
 [System.Text.Json.Serialization.JsonConverter(typeof(AgentSelectionJsonConverter))]
 public sealed record AgentSelection(string AgentId, int? Version);
 
+// One message in a Multiturn case's conversation, as actually exchanged — Role is "user" or
+// "assistant" (never "system"/"tool"; this is a readable transcript for suite authors, not a
+// wire-format replay). Empty for every non-multiturn case, since FinalAnswer already covers
+// that case's single exchange with no need to duplicate it.
+public sealed record TranscriptMessage(string Role, string Text);
+
 // One unit of work for the MAVERIK runner: execute a suite against a set of agents, N
 // repetitions per (agent, question) pair. The 1↔2-style seam between the POST endpoint and
 // the runner, mirroring ChatJob.
@@ -70,9 +76,11 @@ public sealed record QuestionRunResult
 
     // How many times ContextCutoff actually trimmed history during this case — 0 for an agent
     // with no ContextManagementStrategy configured, same as every case before this feature
-    // existed. A single case can only ever trim mid-loop (it starts with a fresh two-message
-    // history each time), so a nonzero count here means the case's own tool loop grew large
-    // enough to cross the agent's effective context ceiling.
+    // existed. For a non-multiturn case this can only ever trim mid-loop (it starts with a fresh
+    // two-message history, and cutoff refuses to drop the only/live exchange unit), so a nonzero
+    // count means the case's own tool loop grew large enough to cross the effective context
+    // ceiling. A Multiturn case gains a real droppable unit per user turn, so cutoff becomes
+    // fully exercisable there too — see MaverikQuestion.Multiturn.
     public int ContextTrimEvents { get; init; }
 
     public string FinalAnswer { get; init; } = "";
@@ -83,6 +91,17 @@ public sealed record QuestionRunResult
     // Judge cost — tracked separately, never added to the agent's token numbers.
     public long? JudgeInputTokens { get; init; }
     public long? JudgeOutputTokens { get; init; }
+
+    // Multiturn cases only (see MaverikQuestion.Multiturn) — 0/null/empty for every non-multiturn
+    // case, unchanged from before this feature existed. UserTurnsUsed counts exchanges regardless
+    // of mode; SimulatorInputTokens/OutputTokens are null unless UserTurnMode "simulated" was
+    // actually used (never populated for "scripted", which has no extra LLM cost) and are tracked
+    // separately from the agent's own tokens, same convention as JudgeInputTokens/OutputTokens
+    // above — simulator cost is an operating cost of testing, never part of the agent's score.
+    public int UserTurnsUsed { get; init; }
+    public long? SimulatorInputTokens { get; init; }
+    public long? SimulatorOutputTokens { get; init; }
+    public IReadOnlyList<TranscriptMessage> Transcript { get; init; } = [];
 
     // Per-case cost estimates — same math MaverikSummaryBuilder already used for the per-agent
     // aggregate (EstimateCost/EstimateToolCost, MaverikSummary.cs), just evaluated once per case

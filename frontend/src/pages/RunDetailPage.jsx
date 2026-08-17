@@ -347,6 +347,16 @@ export function RunDetailPage() {
                               <pre>{c.error}</pre>
                             </>
                           )}
+                          {!c.error && c.transcript?.length > 0 && (
+                            <>
+                              <summary>Conversation ({c.userTurnsUsed} user turn{c.userTurnsUsed === 1 ? "" : "s"})</summary>
+                              {c.transcript.map((m, mi) => (
+                                <p key={mi} className="mono" style={{ whiteSpace: "pre-wrap" }}>
+                                  <strong>{m.role}:</strong> {m.text}
+                                </p>
+                              ))}
+                            </>
+                          )}
                           {!c.error && (
                             <>
                               <summary>Final answer & evaluation</summary>

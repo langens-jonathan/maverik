@@ -57,7 +57,7 @@ public class MaverikResultsWriterTests
         FinishedAt: DateTimeOffset.UtcNow, Results: [Result()], JudgedMetrics: []);
 
     private static RunSummary MinimalSummary(string runId) =>
-        new(runId, [MinimalAgentSummary("agent1")], new JudgeOverheadSummary(0, 0, null));
+        new(runId, [MinimalAgentSummary("agent1")], new JudgeOverheadSummary(0, 0, null), new SimulatorOverheadSummary(0, 0, null));
 
     [Fact]
     public async Task WriteAsync_WritesRunJsonSummaryJsonAndCsv_ToRunIdFolder()
