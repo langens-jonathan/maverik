@@ -153,6 +153,12 @@ export function RunDetailPage() {
           <h3>Comparison</h3>
           {summary.agents.map((a, i) => {
             const color = colorForIndex(i);
+            // Computed client-side from run.results (not a backend AgentSummary field) —
+            // ContextWindowExceeded is a per-case QuestionRunResult flag; reliability-by-agent.js
+            // computes its rate the same way, directly from raw per-case data.
+            const exceededCount = run.results.filter(
+              (r) => r.agentId === a.agentId && r.version === a.version && r.contextWindowExceeded
+            ).length;
             return (
               <div className="agent-block" key={`${a.agentId}:${a.version ?? "live"}`}>
                 <h4>
@@ -209,6 +215,9 @@ export function RunDetailPage() {
                 <p className="muted">
                   {a.errors} error{a.errors === 1 ? "" : "s"}
                   {a.casesWithoutUsage > 0 ? ` · ${a.casesWithoutUsage} case(s) without usage data` : ""}
+                  {exceededCount > 0
+                    ? ` · ${exceededCount} case(s) exceeded the context window`
+                    : ""}
                   {a.capabilityDigest != null && (
                     <>
                       {" · "}
@@ -272,6 +281,7 @@ export function RunDetailPage() {
               <th>Tokens</th>
               <th>Cache Tokens</th>
               <th>Tools</th>
+              <th>Context</th>
               <th>Result</th>
             </tr>
           </thead>
@@ -315,6 +325,9 @@ export function RunDetailPage() {
                     </td>
                     <td className="mono">{c.toolCallCount}</td>
                     <td>
+                      {c.contextWindowExceeded && <span className="badge warn">exceeded</span>}
+                    </td>
+                    <td>
                       {c.error ? (
                         <span className="badge error">error</span>
                       ) : (
@@ -326,7 +339,7 @@ export function RunDetailPage() {
                   </tr>
                   {isOpen && (
                     <tr>
-                      <td colSpan={8}>
+                      <td colSpan={9}>
                         <details className="case-detail" open>
                           {c.error && (
                             <>

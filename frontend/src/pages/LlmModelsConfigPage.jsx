@@ -12,6 +12,7 @@ function emptyModel() {
     supportsTools: true,
     inputPricePerMTok: null,
     outputPricePerMTok: null,
+    contextWindowTokens: null,
   };
 }
 
@@ -171,6 +172,25 @@ export function LlmModelsConfigPage() {
                   updateModel(i, { outputPricePerMTok: e.target.value === "" ? null : Number(e.target.value) })
                 }
               />
+            </div>
+          </div>
+
+          <div className="field-row">
+            <div>
+              <label>Context window (tokens)</label>
+              <input
+                type="number"
+                step="1"
+                value={m.contextWindowTokens ?? ""}
+                onChange={(e) =>
+                  updateModel(i, { contextWindowTokens: e.target.value === "" ? null : Number(e.target.value) })
+                }
+                placeholder="e.g. 200000"
+              />
+              <p className="field-hint">
+                The model's real context window, per the provider's docs. Used as the default ceiling for an
+                agent's context management strategy — leave blank if unknown (the strategy stays a no-op).
+              </p>
             </div>
           </div>
 

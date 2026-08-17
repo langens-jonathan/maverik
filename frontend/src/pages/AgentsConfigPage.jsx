@@ -28,6 +28,8 @@ function emptyAgent() {
     mcpServers: [],
     maxIterations: 8,
     version: 0,
+    contextManagementStrategy: null,
+    simulatedMaxContextTokens: null,
   };
 }
 
@@ -376,6 +378,44 @@ export function AgentsConfigPage() {
                 value={a.maxIterations ?? 8}
                 onChange={(e) => updateAgent(i, { maxIterations: Number(e.target.value) })}
               />
+            </div>
+          </div>
+
+          <div className="field-row">
+            <div>
+              <label>Context management strategy</label>
+              <select
+                value={a.contextManagementStrategy ?? "none"}
+                onChange={(e) =>
+                  updateAgent(i, { contextManagementStrategy: e.target.value === "none" ? null : e.target.value })
+                }
+              >
+                <option value="none">none</option>
+                <option value="cutoff">cutoff</option>
+                <option value="compaction">compaction</option>
+              </select>
+              <p className="field-hint">
+                Cutoff drops the oldest messages once usage crosses 90% of the effective context window. Compaction
+                is not yet implemented for any provider and currently falls back to cutoff.
+              </p>
+            </div>
+            <div>
+              <label>Simulated max context (tokens)</label>
+              <input
+                type="number"
+                step="1"
+                value={a.simulatedMaxContextTokens ?? ""}
+                onChange={(e) =>
+                  updateAgent(i, {
+                    simulatedMaxContextTokens: e.target.value === "" ? null : Number(e.target.value),
+                  })
+                }
+                placeholder="defaults to the model's real window"
+              />
+              <p className="field-hint">
+                Overrides the model's real context window — set a small value to test the strategy above without
+                needing a model that actually has a small window.
+              </p>
             </div>
           </div>
 

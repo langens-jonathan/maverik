@@ -154,9 +154,29 @@ public sealed class MaverikRunner(
                 new(ChatRole.User, question.Text),
             ];
 
+            // Context-size management (see ContextCutoff). Each case starts from a fresh
+            // two-message history, so there is no cross-call state to carry in
+            // (LastKnownContextTokens stays null). Unlike a chat session, a single case never
+            // gains a second ChatRole.User message — question.Text is the only one ever added,
+            // so ContextCutoff always sees exactly one exchange unit and its "never drop the
+            // live/only unit" rule means a case can trigger the check but can never actually be
+            // trimmed, no matter how large its own tool loop grows or how low the ceiling is set.
+            // Cutoff is only ever observable across chat turns; confirmed by design, not a bug.
+            var contextStrategy = ContextManagementStrategyParser.Parse(agent.ContextManagementStrategy);
+            var effectiveMaxContextTokens = agent.SimulatedMaxContextTokens ?? pricing?.ContextWindowTokens;
+
             var turn = await strategy.RunTurnAsync(
-                new TurnRequest(chat, history, tools, agent.MaxIterations, Progress: null, presentationTools), ct);
+                new TurnRequest(chat, history, tools, agent.MaxIterations, Progress: null, presentationTools,
+                    ContextStrategy: contextStrategy, EffectiveMaxContextTokens: effectiveMaxContextTokens), ct);
             sw.Stop();
+
+            // Independent of contextStrategy — true whenever the real peak exceeded the
+            // configured ceiling, even if no management strategy was enabled to do anything
+            // about it. This is the signal that was missing: contextWindowTokens/
+            // simulatedMaxContextTokens alone never made a case fail or even show up as
+            // different in any way before this field existed.
+            var contextWindowExceeded = turn.PeakContextTokens is { } peak
+                && effectiveMaxContextTokens is { } max && peak > max;
 
             // A turn that hit the iteration cap has no final answer — that's a fail on its
             // own; don't spend judge tokens on an empty string.
@@ -176,6 +196,8 @@ public sealed class MaverikRunner(
                 PeakContextTokens = turn.PeakContextTokens,
                 CacheReadInputTokens = turn.CacheReadInputTokens,
                 CacheCreationInputTokens = turn.CacheCreationInputTokens,
+                ContextTrimEvents = turn.ContextTrimCount,
+                ContextWindowExceeded = contextWindowExceeded,
                 Iterations = turn.Iterations,
                 ToolCallCount = turn.ToolCallCount,
                 ToolNames = turn.ToolNames,

@@ -66,6 +66,10 @@
         {
           "ref": "duration-per-question-distribution",
           "title": "Per-case duration spread by agent"
+        },
+        {
+          "ref": "context-window-sizing",
+          "title": "Recommended context window per agent"
         }
       ]
     },

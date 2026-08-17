@@ -53,12 +53,27 @@ public sealed record QuestionRunResult
     // model's real context limit. Null under the same "no usage reported" convention.
     public long? PeakContextTokens { get; init; }
 
+    // True when PeakContextTokens exceeded the effective ceiling (AgentConfig.
+    // SimulatedMaxContextTokens ?? LLMModelConfig.ContextWindowTokens) — computed regardless of
+    // AgentConfig.ContextManagementStrategy, so it warns even when no management strategy is
+    // enabled (unlike ContextTrimEvents below, which only ever fires under "cutoff"/
+    // "compaction"). False (not null) both when the ceiling is unknown and when it simply wasn't
+    // exceeded — a pure yes/no diagnostic, deliberately never affects Passed.
+    public bool ContextWindowExceeded { get; init; }
+
     // Anthropic prompt-caching (see AnthropicCacheControl) — null for agents that don't opt in
     // via AgentConfig.PromptCaching, since nothing ever sets a cache breakpoint for them.
     // CacheReadInputTokens is already counted within InputTokens above (don't double-price it);
     // CacheCreationInputTokens is separate (not part of InputTokens).
     public long? CacheReadInputTokens { get; init; }
     public long? CacheCreationInputTokens { get; init; }
+
+    // How many times ContextCutoff actually trimmed history during this case — 0 for an agent
+    // with no ContextManagementStrategy configured, same as every case before this feature
+    // existed. A single case can only ever trim mid-loop (it starts with a fresh two-message
+    // history each time), so a nonzero count here means the case's own tool loop grew large
+    // enough to cross the agent's effective context ceiling.
+    public int ContextTrimEvents { get; init; }
 
     public string FinalAnswer { get; init; } = "";
 

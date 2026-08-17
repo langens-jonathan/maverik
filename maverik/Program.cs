@@ -291,6 +291,8 @@ app.MapPost("/api/config/agents/{id}/versions", (string id, ConfigFileService cf
         MaxIterations = target.MaxIterations,
         PromptCaching = target.PromptCaching,
         PromptCachingTtl = target.PromptCachingTtl,
+        ContextManagementStrategy = target.ContextManagementStrategy,
+        SimulatedMaxContextTokens = target.SimulatedMaxContextTokens,
         Version = nextVersion,
     };
     cfg.SaveAgentVersion(new AgentVersionSnapshot(id, nextVersion, cutAt, snapshotConfig));
