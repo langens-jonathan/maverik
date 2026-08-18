@@ -2,6 +2,7 @@ using System.Diagnostics;
 using Microsoft.Extensions.AI;
 using McpHost.Agents;
 using McpHost.Config;
+using McpHost.Guardrails;
 using McpHost.LlmModel;
 using McpHost.Loop;
 using McpHost.Mcp;
@@ -24,6 +25,7 @@ public sealed class MaverikRunner(
     LLMModelRegistry models,
     LoopStrategyRegistry loops,
     McpServerRegistry mcp,
+    GuardrailRegistry guardrails,
     ToolCostRegistry toolCosts,
     CapabilityOverrideRegistry capabilityOverrides,
     CriterionEvaluator evaluator,
@@ -92,6 +94,10 @@ public sealed class MaverikRunner(
             var pricing = models.ResolveConfig(agent.Model);
             var toolServerByName = MaverikSummaryBuilder.BuildToolServerByName(agent, mcp);
 
+            // Resolved once per agent selection (not per case), same as chat/tools/pricing above.
+            var (guardrailPolicies, classifierClients) = guardrails.ResolveForAgent(agent.Guardrails, models);
+            var supportsTools = pricing?.SupportsTools ?? true;
+
             // Capture the effective (post-override) catalog snapshot before running any case —
             // see CapabilityBundle. Published incrementally so it's visible mid-run, same as
             // CompletedCases/Results below. Keyed by the whole selection so two versions of the
@@ -114,7 +120,8 @@ public sealed class MaverikRunner(
             {
                 for (var repetition = 1; repetition <= request.Repetitions; repetition++)
                 {
-                    var result = await RunCaseAsync(agent, selection.Version, chat, strategy, tools, presentationTools, pricing, toolServerByName, suite, question, repetition, ct);
+                    var result = await RunCaseAsync(agent, selection.Version, chat, strategy, tools, presentationTools,
+                        guardrailPolicies, classifierClients, supportsTools, pricing, toolServerByName, suite, question, repetition, ct);
                     results.Add(result);
 
                     // Publish progress after every case so polls see the run advance.
@@ -142,6 +149,7 @@ public sealed class MaverikRunner(
         AgentConfig agent, int? version, IChatClient chat, ILoopStrategy strategy,
         IReadOnlyList<ModelContextProtocol.Client.McpClientTool> tools,
         IReadOnlyList<AITool>? presentationTools,
+        IReadOnlyList<GuardrailPolicy> guardrailPolicies, IReadOnlyDictionary<string, IChatClient> classifierClients, bool supportsTools,
         LLMModelConfig? pricing, IReadOnlyDictionary<string, string> toolServerByName,
         MaverikSuite suite, MaverikQuestion question, int repetition, CancellationToken ct)
     {
@@ -188,6 +196,7 @@ public sealed class MaverikRunner(
             var toolNames = new List<string>();
             var contextTrimEvents = 0;
             var contextWindowExceeded = false;
+            var guardrailFindings = new List<GuardrailFinding>();
             var userTurnsUsed = 0;
             long simInputTokens = 0, simOutputTokens = 0;
             var sawSimulatorUsage = false;
@@ -198,9 +207,12 @@ public sealed class MaverikRunner(
                 turn = await strategy.RunTurnAsync(
                     new TurnRequest(chat, history, tools, agent.MaxIterations, Progress: null, presentationTools,
                         ContextStrategy: contextStrategy, EffectiveMaxContextTokens: effectiveMaxContextTokens,
-                        LastKnownContextTokens: lastKnownContextTokens), ct);
+                        LastKnownContextTokens: lastKnownContextTokens,
+                        Guardrails: guardrailPolicies, GuardrailClassifierClients: classifierClients,
+                        SupportsTools: supportsTools), ct);
                 transcript?.Add(new("assistant", turn.FinalText));
                 lastKnownContextTokens = turn.PeakContextTokens;
+                guardrailFindings.AddRange(turn.GuardrailFindings);
 
                 totalInputTokens = Accumulate(totalInputTokens, turn.InputTokens);
                 totalOutputTokens = Accumulate(totalOutputTokens, turn.OutputTokens);
@@ -220,7 +232,7 @@ public sealed class MaverikRunner(
                 if (turn.PeakContextTokens is { } peak && effectiveMaxContextTokens is { } max && peak > max)
                     contextWindowExceeded = true;
 
-                if (!question.Multiturn || turn.HitIterationLimit || userTurnsUsed >= maxUserTurns)
+                if (!question.Multiturn || turn.HitIterationLimit || turn.MalformedResponseError is not null || userTurnsUsed >= maxUserTurns)
                     break;
 
                 string? nextMessage;
@@ -249,9 +261,12 @@ public sealed class MaverikRunner(
             // own; don't spend judge tokens on an empty string. Always evaluates the LAST turn's
             // FinalText, multi-turn or not — the criterion never needs to know how many
             // exchanges it took to get there.
-            var evaluation = turn.HitIterationLimit
-                ? new EvaluationResult(false, "no final answer: hit the tool-iteration limit", null, null)
-                : await evaluator.EvaluateAsync(question, turn.FinalText, suite.JudgeModel, ct);
+            var evaluation =
+                turn.MalformedResponseError is not null
+                    ? new EvaluationResult(false, $"tool-calling/response failure: {turn.MalformedResponseError}", null, null)
+                : turn.HitIterationLimit
+                    ? new EvaluationResult(false, "no final answer: hit the tool-iteration limit", null, null)
+                    : await evaluator.EvaluateAsync(question, turn.FinalText, suite.JudgeModel, ct);
 
             return new QuestionRunResult
             {
@@ -267,6 +282,10 @@ public sealed class MaverikRunner(
                 CacheCreationInputTokens = totalCacheCreation,
                 ContextTrimEvents = contextTrimEvents,
                 ContextWindowExceeded = contextWindowExceeded,
+                GuardrailFindings = guardrailFindings,
+                GuardrailBlocked = guardrailFindings.Any(f => f.Action == "block"),
+                ToolCallingFailure = turn.MalformedResponseError,
+                ToolsSentToModel = supportsTools,
                 Iterations = totalIterations,
                 ToolCallCount = totalToolCalls,
                 ToolNames = toolNames,

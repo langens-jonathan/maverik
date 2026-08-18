@@ -1,3 +1,4 @@
+using McpHost.Guardrails;
 using Microsoft.Extensions.AI;
 
 namespace McpHost.Loop;
@@ -9,15 +10,18 @@ public sealed class ManualLoopStrategy : LoopStrategyBase
 {
     public override string Name => "manual";
 
-    protected override async Task<IReadOnlyList<FunctionResultContent>> ExecuteCallsAsync(
+    protected override async Task<(IReadOnlyList<FunctionResultContent> Results, IReadOnlyList<GuardrailFinding> Findings)> ExecuteCallsAsync(
         IReadOnlyList<FunctionCallContent> calls, TurnRequest request, CancellationToken ct)
     {
         var results = new List<FunctionResultContent>();
+        var findings = new List<GuardrailFinding>();
         foreach (var call in calls)
         {
             ReportCall(call, request);
-            results.Add(await InvokeToolAsync(call, request, ct));
+            var (result, finding) = await InvokeToolAsync(call, request, ct);
+            results.Add(result);
+            if (finding is not null) findings.Add(finding);
         }
-        return results;
+        return (results, findings);
     }
 }
