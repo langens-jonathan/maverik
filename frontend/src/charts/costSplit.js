@@ -48,7 +48,8 @@ export default function render(container, data, theme) {
 
   const g = svg.append("g").attr("transform", `translate(${margin.left},0)`);
 
-  g.selectAll("rect").data(segments).join("rect")
+  const bars = g.selectAll("rect.segment").data(segments).join("rect")
+    .attr("class", "segment")
     .attr("x", (s) => s.x).attr("y", barY).attr("width", (s) => s.w).attr("height", barH)
     .attr("fill", (s) => s.color)
     .style("cursor", "pointer");
@@ -61,8 +62,11 @@ export default function render(container, data, theme) {
   }
 
   const tooltip = createTooltip(container, theme);
-  g.selectAll("rect").filter((s) => !!s.key)
-    .on("mouseenter", function (event, s) {
+  // Hover handlers bind to `bars` (the actual data-bound selection), not a fresh
+  // g.selectAll("rect") — that would also pick up the separator rect above, which has no bound
+  // datum, and crash the whole page on mount (`s` is undefined for it, `!!s.key` throws inside a
+  // useEffect with no error boundary above it).
+  bars.on("mouseenter", function (event, s) {
       d3.select(this).attr("opacity", 0.85);
       tooltip.clear();
       tooltip.node.append("div").style("font-weight", 600).style("color", theme.textStrong)
