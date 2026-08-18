@@ -10,6 +10,14 @@ export function usePolling(fn, intervalMs, enabled = true) {
   const [loading, setLoading] = useState(true);
   const fnRef = useRef(fn);
   fnRef.current = fn;
+  // JSON.stringify, not the freshly-parsed object itself — every tick's fetch response is a new
+  // object even when nothing on the server changed, and a poll-driven page (e.g. RunDetailPage,
+  // which recreates its chart data on every render) re-running effects off an identical-content-
+  // but-different-reference value causes visible churn (charts tearing down/redrawing every
+  // 1.5-2.5s, which can even reset scroll position as their container briefly collapses). Content
+  // here is always plain JSON from our own API, so string comparison is a safe stand-in for deep
+  // equality.
+  const lastJsonRef = useRef(undefined);
 
   useEffect(() => {
     if (!enabled) return;
@@ -19,7 +27,11 @@ export function usePolling(fn, intervalMs, enabled = true) {
       try {
         const result = await fnRef.current();
         if (!cancelled) {
-          setData(result);
+          const json = JSON.stringify(result);
+          if (json !== lastJsonRef.current) {
+            lastJsonRef.current = json;
+            setData(result);
+          }
           setError(null);
         }
       } catch (err) {

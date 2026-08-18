@@ -27,10 +27,15 @@ public sealed class MaverikRunner(
     ToolCostRegistry toolCosts,
     CapabilityOverrideRegistry capabilityOverrides,
     CriterionEvaluator evaluator,
+    UserSimulator userSimulator,
     MaverikResultsWriter writer,
     ConfigFileService configFiles,
     ILogger<MaverikRunner> log) : BackgroundService
 {
+    // MaverikQuestion.MaxUserTurns' default when unset — see that field's doc comment for why
+    // this is smaller than AgentConfig.MaxIterations' default of 8.
+    internal const int DefaultMaxUserTurns = 4;
+
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         await foreach (var request in queue.ReadAllAsync(stoppingToken))
@@ -154,32 +159,96 @@ public sealed class MaverikRunner(
                 new(ChatRole.User, question.Text),
             ];
 
-            // Context-size management (see ContextCutoff). Each case starts from a fresh
-            // two-message history, so there is no cross-call state to carry in
-            // (LastKnownContextTokens stays null). Unlike a chat session, a single case never
-            // gains a second ChatRole.User message — question.Text is the only one ever added,
-            // so ContextCutoff always sees exactly one exchange unit and its "never drop the
-            // live/only unit" rule means a case can trigger the check but can never actually be
-            // trimmed, no matter how large its own tool loop grows or how low the ceiling is set.
-            // Cutoff is only ever observable across chat turns; confirmed by design, not a bug.
+            // Context-size management (see ContextCutoff). effectiveMaxContextTokens is resolved
+            // once per case; lastKnownContextTokens carries forward BETWEEN loop iterations below
+            // (new — before Multiturn existed, a case only ever called RunTurnAsync once, so
+            // there was nothing to carry). A non-multiturn case still runs the loop body exactly
+            // once and never gains a second ChatRole.User message, so its behavior (including
+            // ContextCutoff's "never drop the only/live exchange unit" floor) is unchanged.
             var contextStrategy = ContextManagementStrategyParser.Parse(agent.ContextManagementStrategy);
             var effectiveMaxContextTokens = agent.SimulatedMaxContextTokens ?? pricing?.ContextWindowTokens;
+            long? lastKnownContextTokens = null;
 
-            var turn = await strategy.RunTurnAsync(
-                new TurnRequest(chat, history, tools, agent.MaxIterations, Progress: null, presentationTools,
-                    ContextStrategy: contextStrategy, EffectiveMaxContextTokens: effectiveMaxContextTokens), ct);
+            var transcript = question.Multiturn ? new List<TranscriptMessage> { new("user", question.Text) } : null;
+            var maxUserTurns = question.MaxUserTurns ?? DefaultMaxUserTurns;
+            var scriptedQueue = question.Multiturn && string.Equals(question.UserTurnMode, "scripted", StringComparison.OrdinalIgnoreCase)
+                ? new Queue<string>(question.ScriptedUserTurns!)
+                : null;
+            var simulatorModel = question.UserSimulatorModel ?? suite.UserSimulatorModel;
+
+            // Accumulated across every RunTurnAsync call this case makes — for a non-multiturn
+            // case that's exactly one call, so these totals are identical to reading straight off
+            // `turn` as before. PeakContextTokens/ContextWindowExceeded/ContextTrimEvents must
+            // aggregate across ALL calls (not just the last), since any one of them could be the
+            // call that actually crossed the ceiling or triggered a trim.
+            long? totalInputTokens = null, totalOutputTokens = null, totalCacheRead = null, totalCacheCreation = null;
+            long? maxPeakContextTokens = null;
+            var totalIterations = 0;
+            var totalToolCalls = 0;
+            var toolNames = new List<string>();
+            var contextTrimEvents = 0;
+            var contextWindowExceeded = false;
+            var userTurnsUsed = 0;
+            long simInputTokens = 0, simOutputTokens = 0;
+            var sawSimulatorUsage = false;
+
+            TurnResult turn;
+            while (true)
+            {
+                turn = await strategy.RunTurnAsync(
+                    new TurnRequest(chat, history, tools, agent.MaxIterations, Progress: null, presentationTools,
+                        ContextStrategy: contextStrategy, EffectiveMaxContextTokens: effectiveMaxContextTokens,
+                        LastKnownContextTokens: lastKnownContextTokens), ct);
+                transcript?.Add(new("assistant", turn.FinalText));
+                lastKnownContextTokens = turn.PeakContextTokens;
+
+                totalInputTokens = Accumulate(totalInputTokens, turn.InputTokens);
+                totalOutputTokens = Accumulate(totalOutputTokens, turn.OutputTokens);
+                totalCacheRead = Accumulate(totalCacheRead, turn.CacheReadInputTokens);
+                totalCacheCreation = Accumulate(totalCacheCreation, turn.CacheCreationInputTokens);
+                if (turn.PeakContextTokens is { } thisPeak)
+                    maxPeakContextTokens = maxPeakContextTokens is null ? thisPeak : Math.Max(maxPeakContextTokens.Value, thisPeak);
+                totalIterations += turn.Iterations;
+                totalToolCalls += turn.ToolCallCount;
+                toolNames.AddRange(turn.ToolNames);
+                contextTrimEvents += turn.ContextTrimCount;
+                // Independent of contextStrategy — true whenever any call's real peak exceeded
+                // the configured ceiling, even if no management strategy was enabled to do
+                // anything about it. This is the signal that was missing: contextWindowTokens/
+                // simulatedMaxContextTokens alone never made a case fail or even show up as
+                // different in any way before this field existed.
+                if (turn.PeakContextTokens is { } peak && effectiveMaxContextTokens is { } max && peak > max)
+                    contextWindowExceeded = true;
+
+                if (!question.Multiturn || turn.HitIterationLimit || userTurnsUsed >= maxUserTurns)
+                    break;
+
+                string? nextMessage;
+                if (scriptedQueue is not null)
+                {
+                    if (scriptedQueue.Count == 0) break;
+                    nextMessage = scriptedQueue.Dequeue();
+                }
+                else
+                {
+                    var sim = await userSimulator.GetNextTurnAsync(question, simulatorModel!, history, ct);
+                    sawSimulatorUsage = true;
+                    simInputTokens += sim.InputTokens ?? 0;
+                    simOutputTokens += sim.OutputTokens ?? 0;
+                    if (!sim.Continue) break;
+                    nextMessage = sim.Message;
+                }
+
+                userTurnsUsed++;
+                history.Add(new ChatMessage(ChatRole.User, nextMessage!));
+                transcript?.Add(new("user", nextMessage!));
+            }
             sw.Stop();
 
-            // Independent of contextStrategy — true whenever the real peak exceeded the
-            // configured ceiling, even if no management strategy was enabled to do anything
-            // about it. This is the signal that was missing: contextWindowTokens/
-            // simulatedMaxContextTokens alone never made a case fail or even show up as
-            // different in any way before this field existed.
-            var contextWindowExceeded = turn.PeakContextTokens is { } peak
-                && effectiveMaxContextTokens is { } max && peak > max;
-
             // A turn that hit the iteration cap has no final answer — that's a fail on its
-            // own; don't spend judge tokens on an empty string.
+            // own; don't spend judge tokens on an empty string. Always evaluates the LAST turn's
+            // FinalText, multi-turn or not — the criterion never needs to know how many
+            // exchanges it took to get there.
             var evaluation = turn.HitIterationLimit
                 ? new EvaluationResult(false, "no final answer: hit the tool-iteration limit", null, null)
                 : await evaluator.EvaluateAsync(question, turn.FinalText, suite.JudgeModel, ct);
@@ -191,25 +260,29 @@ public sealed class MaverikRunner(
                 QuestionId = question.Id,
                 Repetition = repetition,
                 DurationMs = sw.ElapsedMilliseconds,
-                InputTokens = turn.InputTokens,
-                OutputTokens = turn.OutputTokens,
-                PeakContextTokens = turn.PeakContextTokens,
-                CacheReadInputTokens = turn.CacheReadInputTokens,
-                CacheCreationInputTokens = turn.CacheCreationInputTokens,
-                ContextTrimEvents = turn.ContextTrimCount,
+                InputTokens = totalInputTokens,
+                OutputTokens = totalOutputTokens,
+                PeakContextTokens = maxPeakContextTokens,
+                CacheReadInputTokens = totalCacheRead,
+                CacheCreationInputTokens = totalCacheCreation,
+                ContextTrimEvents = contextTrimEvents,
                 ContextWindowExceeded = contextWindowExceeded,
-                Iterations = turn.Iterations,
-                ToolCallCount = turn.ToolCallCount,
-                ToolNames = turn.ToolNames,
+                Iterations = totalIterations,
+                ToolCallCount = totalToolCalls,
+                ToolNames = toolNames,
                 HitIterationLimit = turn.HitIterationLimit,
                 FinalAnswer = turn.FinalText,
                 Passed = evaluation.Passed,
                 EvaluationDetail = evaluation.Detail,
                 JudgeInputTokens = evaluation.JudgeInputTokens,
                 JudgeOutputTokens = evaluation.JudgeOutputTokens,
+                UserTurnsUsed = userTurnsUsed,
+                SimulatorInputTokens = sawSimulatorUsage ? simInputTokens : null,
+                SimulatorOutputTokens = sawSimulatorUsage ? simOutputTokens : null,
+                Transcript = transcript ?? [],
                 EstCost = MaverikSummaryBuilder.EstimateCost(
-                    turn.InputTokens, turn.OutputTokens, turn.CacheReadInputTokens, turn.CacheCreationInputTokens, pricing),
-                EstToolCost = MaverikSummaryBuilder.EstimateToolCost(turn.ToolNames, toolServerByName, toolCosts),
+                    totalInputTokens, totalOutputTokens, totalCacheRead, totalCacheCreation, pricing),
+                EstToolCost = MaverikSummaryBuilder.EstimateToolCost(toolNames, toolServerByName, toolCosts),
             };
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
@@ -234,4 +307,10 @@ public sealed class MaverikRunner(
             };
         }
     }
+
+    // Sums two "null means unknown, never 0" totals — same convention LoopStrategyBase.Accumulate
+    // uses within a single RunTurnAsync call, applied here across the (possibly several)
+    // RunTurnAsync calls one Multiturn case makes.
+    private static long? Accumulate(long? total, long? amount) =>
+        amount is null ? total : (total ?? 0) + amount.Value;
 }

@@ -15,6 +15,7 @@ function emptySuite() {
     description: "",
     agents: [],
     judgeModel: null,
+    userSimulatorModel: null,
     questions: [],
   };
 }
@@ -24,6 +25,11 @@ function emptyQuestion() {
     id: "",
     text: "",
     criterion: { type: "exact", expected: "", caseSensitive: false, pattern: null, rubric: null, judgeModel: null },
+    multiturn: false,
+    userTurnMode: null,
+    scriptedUserTurns: null,
+    userContext: null,
+    maxUserTurns: null,
   };
 }
 
@@ -84,6 +90,97 @@ function CriterionEditor({ criterion, modelIds, onChange }) {
               </option>
             ))}
           </select>
+        </>
+      )}
+    </div>
+  );
+}
+
+// Multiturn keeps the conversation going past the first exchange — "scripted" sends a fixed
+// ordered list of follow-ups regardless of what the agent says (deterministic, no extra cost);
+// "simulated" uses the suite's userSimulatorModel to react to the agent's actual response. See
+// MaverikQuestion in MaverikSuiteConfig.cs / CLAUDE.md's "Multi-turn conversations" section.
+function MultiturnEditor({ question, onChange }) {
+  const turns = question.scriptedUserTurns ?? [];
+
+  function updateTurn(i, text) {
+    onChange({ scriptedUserTurns: turns.map((t, idx) => (idx === i ? text : t)) });
+  }
+  function addTurn() {
+    onChange({ scriptedUserTurns: [...turns, ""] });
+  }
+  function removeTurn(i) {
+    onChange({ scriptedUserTurns: turns.filter((_, idx) => idx !== i) });
+  }
+
+  return (
+    <div>
+      <div className="checkbox-list">
+        <label>
+          <input
+            type="checkbox"
+            checked={question.multiturn ?? false}
+            onChange={(e) =>
+              onChange({
+                multiturn: e.target.checked,
+                userTurnMode: e.target.checked ? question.userTurnMode ?? "scripted" : null,
+              })
+            }
+          />
+          Multi-turn conversation
+        </label>
+      </div>
+
+      {question.multiturn && (
+        <>
+          <div className="field-row">
+            <div>
+              <label>Mode</label>
+              <select value={question.userTurnMode ?? "scripted"} onChange={(e) => onChange({ userTurnMode: e.target.value })}>
+                <option value="scripted">Scripted</option>
+                <option value="simulated">Simulated</option>
+              </select>
+            </div>
+            <div>
+              <label>Max user turns</label>
+              <input
+                type="number"
+                step="1"
+                value={question.maxUserTurns ?? ""}
+                onChange={(e) => onChange({ maxUserTurns: e.target.value === "" ? null : Number(e.target.value) })}
+                placeholder="default 4"
+              />
+            </div>
+          </div>
+
+          {question.userTurnMode === "simulated" && (
+            <>
+              <label>User context (optional)</label>
+              <textarea
+                rows={2}
+                value={question.userContext ?? ""}
+                onChange={(e) => onChange({ userContext: e.target.value === "" ? null : e.target.value })}
+                placeholder="Extra background only the simulated user knows, e.g. which repo/account it's asking about."
+              />
+            </>
+          )}
+
+          {(question.userTurnMode ?? "scripted") === "scripted" && (
+            <>
+              <label>Scripted follow-ups (sent in order)</label>
+              {turns.map((t, i) => (
+                <div className="field-row" key={i}>
+                  <textarea rows={1} value={t} onChange={(e) => updateTurn(i, e.target.value)} style={{ flex: 1 }} />
+                  <button className="secondary" onClick={() => removeTurn(i)}>
+                    Remove
+                  </button>
+                </div>
+              ))}
+              <button className="secondary add-row-btn" onClick={addTurn}>
+                + Add turn
+              </button>
+            </>
+          )}
         </>
       )}
     </div>
@@ -173,6 +270,7 @@ export function SuitesConfigPage() {
         description: suite.description,
         agents: suite.agents,
         judgeModel: suite.judgeModel || null,
+        userSimulatorModel: suite.userSimulatorModel || null,
         questions: suite.questions,
       };
       const res = suite._isNew ? await api.createSuite(payload) : await api.updateSuite(suite.id, payload);
@@ -261,18 +359,36 @@ export function SuitesConfigPage() {
               ))}
             </div>
 
-            <label>Judge model (default for llm-judge criteria)</label>
-            <select
-              value={suite.judgeModel ?? ""}
-              onChange={(e) => updateSuite(suite._key, { judgeModel: e.target.value || null })}
-            >
-              <option value="">— none —</option>
-              {modelIds.map((id) => (
-                <option key={id} value={id}>
-                  {id}
-                </option>
-              ))}
-            </select>
+            <div className="field-row">
+              <div>
+                <label>Judge model (default for llm-judge criteria)</label>
+                <select
+                  value={suite.judgeModel ?? ""}
+                  onChange={(e) => updateSuite(suite._key, { judgeModel: e.target.value || null })}
+                >
+                  <option value="">— none —</option>
+                  {modelIds.map((id) => (
+                    <option key={id} value={id}>
+                      {id}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label>User simulator model (default for multiturn "simulated" questions)</label>
+                <select
+                  value={suite.userSimulatorModel ?? ""}
+                  onChange={(e) => updateSuite(suite._key, { userSimulatorModel: e.target.value || null })}
+                >
+                  <option value="">— none —</option>
+                  {modelIds.map((id) => (
+                    <option key={id} value={id}>
+                      {id}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
 
             <label style={{ marginTop: "1rem" }}>Questions ({suite.questions.length})</label>
             {suite.questions.map((q, qi) => (
@@ -300,6 +416,7 @@ export function SuitesConfigPage() {
                   modelIds={modelIds}
                   onChange={(patch) => updateCriterion(suite._key, qi, patch)}
                 />
+                <MultiturnEditor question={q} onChange={(patch) => updateQuestion(suite._key, qi, patch)} />
               </div>
             ))}
             <button className="secondary add-row-btn" onClick={() => addQuestion(suite._key)}>

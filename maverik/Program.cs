@@ -134,6 +134,10 @@ builder.Services.AddSingleton<MaverikSuiteRegistry>(sp => new MaverikSuiteRegist
 // Judges MAVERIK answers (deterministic checks + llm-judge). Stateless; used by the runner.
 builder.Services.AddSingleton<CriterionEvaluator>();
 
+// Drives Multiturn questions' "simulated" UserTurnMode — same stateless, model-resolving shape
+// as CriterionEvaluator above.
+builder.Services.AddSingleton<UserSimulator>();
+
 // --- MAVERIK runner pipeline ---
 // Mirrors the chat pipeline (queue → background worker → store polled by endpoints), but as
 // its OWN worker so a long benchmark run never blocks interactive chat.
