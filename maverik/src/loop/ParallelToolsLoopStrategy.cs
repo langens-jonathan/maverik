@@ -1,3 +1,4 @@
+using McpHost.Guardrails;
 using Microsoft.Extensions.AI;
 
 namespace McpHost.Loop;
@@ -10,7 +11,7 @@ public sealed class ParallelToolsLoopStrategy : LoopStrategyBase
 {
     public override string Name => "parallel-tools";
 
-    protected override async Task<IReadOnlyList<FunctionResultContent>> ExecuteCallsAsync(
+    protected override async Task<(IReadOnlyList<FunctionResultContent> Results, IReadOnlyList<GuardrailFinding> Findings)> ExecuteCallsAsync(
         IReadOnlyList<FunctionCallContent> calls, TurnRequest request, CancellationToken ct)
     {
         // Announce every call before any of them start — under concurrent execution there is
@@ -19,9 +20,12 @@ public sealed class ParallelToolsLoopStrategy : LoopStrategyBase
             ReportCall(call, request);
 
         // InvokeToolAsync never throws (failures come back as error results the model can
-        // react to), so WhenAll only faults on cancellation.
+        // react to), so WhenAll only faults on cancellation. Each task returns its own
+        // (result, finding?) tuple — no shared mutable state across the concurrent calls.
         var tasks = calls.Select(call => InvokeToolAsync(call, request, ct)).ToList();
         await Task.WhenAll(tasks);
-        return tasks.Select(t => t.Result).ToList();
+        return (
+            tasks.Select(t => t.Result.Result).ToList(),
+            tasks.Select(t => t.Result.Finding).Where(f => f is not null).Select(f => f!).ToList());
     }
 }

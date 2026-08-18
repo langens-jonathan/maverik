@@ -1,5 +1,6 @@
 using System.Text.Json;
 using McpHost.Agents;
+using McpHost.Guardrails;
 using McpHost.LlmModel;
 using McpHost.Maverik;
 using McpHost.Mcp;
@@ -43,6 +44,9 @@ public sealed class ConfigFileService
 
     public (CapabilityOverridesFile Data, bool Bootstrapped) LoadCapabilityOverrides() => Load<CapabilityOverridesFile>("capability-overrides.json");
     public void SaveCapabilityOverrides(CapabilityOverridesFile data) => Save("capability-overrides.json", data);
+
+    public (GuardrailsFile Data, bool Bootstrapped) LoadGuardrails() => Load<GuardrailsFile>("guardrails.json");
+    public void SaveGuardrails(GuardrailsFile data) => Save("guardrails.json", data);
 
     // One file per (agent, version) under agent-versions/<agentId>/ — cut via
     // POST /api/config/agents/{id}/versions, never overwritten once written. A subdirectory per

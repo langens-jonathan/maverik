@@ -1,4 +1,5 @@
 using McpHost.Agents;
+using McpHost.Guardrails;
 
 namespace McpHost.Maverik;
 
@@ -82,6 +83,29 @@ public sealed record QuestionRunResult
     // ceiling. A Multiturn case gains a real droppable unit per user turn, so cutoff becomes
     // fully exercisable there too — see MaverikQuestion.Multiturn.
     public int ContextTrimEvents { get; init; }
+
+    // Guardrail enforcement findings across every RunTurnAsync call this case made — empty for a
+    // case whose agent has no guardrails attached, unchanged from before this feature existed.
+    public IReadOnlyList<GuardrailFinding> GuardrailFindings { get; init; } = [];
+
+    // True iff any finding above has Action == "block" — the case's flow was actually altered
+    // (refusal substituted, or a tool call denied), not merely observed. Deliberately never
+    // affects Passed on its own (same "diagnostic, not a scoring side-effect" stance
+    // ContextWindowExceeded already takes) — only a guardrail-outcome criterion turns it into
+    // pass/fail.
+    public bool GuardrailBlocked { get; init; }
+
+    // Set when a turn's chat-completion call itself threw a provider/parsing-shaped exception
+    // (see TurnResult.MalformedResponseError) — null for every case unaffected, unchanged from
+    // before this feature existed. A case with this set still has Error == null (it's not the
+    // "case blew up" bucket) and still counts as evaluated, deliberately scored as a fail — same
+    // "no final answer is a fail" stance HitIterationLimit already takes.
+    public string? ToolCallingFailure { get; init; }
+
+    // False only when LLMModelConfig.SupportsTools is explicitly false for this case's model —
+    // lets a report distinguish "0 tool calls because tools were never offered" from "0 tool
+    // calls despite being offered." True (the default) for every case unaffected by this field.
+    public bool ToolsSentToModel { get; init; } = true;
 
     public string FinalAnswer { get; init; } = "";
 

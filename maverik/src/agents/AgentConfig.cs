@@ -36,6 +36,13 @@ public sealed class AgentConfig
     // tools from these servers (filtered from the already-connected catalog).
     public List<string> McpServers { get; set; } = new();
 
+    // Guardrail policy ids (guardrails.json) attached to this agent. Resolved via
+    // GuardrailRegistry.ResolveForAgent — unlike McpServers this is NOT eagerly validated at
+    // AgentRegistry.Build time (AgentRegistry doesn't validate Model/McpServers against their
+    // registries either — both fail lazily at first real use). Empty (the default) means "no
+    // guardrails," unchanged from before this feature existed.
+    public List<string> Guardrails { get; set; } = new();
+
     public int MaxIterations { get; set; } = 8;
 
     // Opt-in Anthropic prompt-prefix caching (see AnthropicCacheControl). Per-agent rather than

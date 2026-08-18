@@ -1,4 +1,6 @@
+using System.ClientModel;
 using System.Text.Json;
+using McpHost.Guardrails;
 using McpHost.LlmModel;
 using Microsoft.Extensions.AI;
 using ModelContextProtocol.Client;
@@ -51,7 +53,22 @@ public sealed record TurnRequest(
     // never trims; later iterations within the same call use their own running usage instead.
     ContextManagementStrategy ContextStrategy = ContextManagementStrategy.None,
     int? EffectiveMaxContextTokens = null,
-    long? LastKnownContextTokens = null);
+    long? LastKnownContextTokens = null,
+    // Guardrail policies attached to this agent (already resolved via GuardrailRegistry.
+    // ResolveForAgent — see AgentConfig.Guardrails) and the classifier IChatClients any of their
+    // llm-classifier rules need. Empty list / empty dict (the defaults) mean "no guardrails,"
+    // unchanged from before this feature existed.
+    IReadOnlyList<GuardrailPolicy> Guardrails = null!,
+    IReadOnlyDictionary<string, IChatClient> GuardrailClassifierClients = null!,
+    // Resolved once per agent selection/chat job from LLMModelConfig.SupportsTools (default true
+    // when unset/unresolvable). When false, Tools/PresentationTools are never attached to the
+    // outgoing ChatOptions at all — the model is never even offered tool-calling, rather than
+    // offered it and expected to decline.
+    bool SupportsTools = true)
+{
+    public IReadOnlyList<GuardrailPolicy> Guardrails { get; init; } = Guardrails ?? [];
+    public IReadOnlyDictionary<string, IChatClient> GuardrailClassifierClients { get; init; } = GuardrailClassifierClients ?? new Dictionary<string, IChatClient>();
+}
 
 // What a turn produced, plus the metrics MAVERIK records per case.
 public sealed record TurnResult(
@@ -65,7 +82,17 @@ public sealed record TurnResult(
     long? PeakContextTokens,            // largest single round-trip's (input+output), not summed — see RunTurnAsync
     long? CacheReadInputTokens = null,      // Anthropic prompt-caching: tokens served from cache (already counted within InputTokens)
     long? CacheCreationInputTokens = null,  // Anthropic prompt-caching: tokens spent writing a new cache entry (NOT counted within InputTokens)
-    int ContextTrimCount = 0);              // how many times ContextCutoff actually trimmed history during this turn
+    int ContextTrimCount = 0,               // how many times ContextCutoff actually trimmed history during this turn
+    IReadOnlyList<GuardrailFinding>? GuardrailFindings = null, // findings from every guardrail check this turn ran; empty when no guardrails are attached
+    // Set when this turn's GetResponseAsync call itself threw a provider/parsing-shaped
+    // exception — e.g. a small local model emitted malformed tool-call syntax the client library
+    // couldn't parse. DISTINCT from a guardrail block (enforcement working as designed) and
+    // distinct from anything that reaches the caller's own outer generic catch (MCP tool infra
+    // failures, judge failures, network errors). Null = no such failure this turn.
+    string? MalformedResponseError = null)
+{
+    public IReadOnlyList<GuardrailFinding> GuardrailFindings { get; init; } = GuardrailFindings ?? [];
+}
 
 public interface ILoopStrategy
 {
@@ -95,20 +122,47 @@ public abstract class LoopStrategyBase : ILoopStrategy
     public abstract string Name { get; }
 
     // The strategy-specific step: execute the calls the model requested this iteration and
-    // return one result per call, in the original call order.
-    protected abstract Task<IReadOnlyList<FunctionResultContent>> ExecuteCallsAsync(
+    // return one result per call (in the original call order), plus any guardrail findings from
+    // tool-gate denials along the way.
+    protected abstract Task<(IReadOnlyList<FunctionResultContent> Results, IReadOnlyList<GuardrailFinding> Findings)> ExecuteCallsAsync(
         IReadOnlyList<FunctionCallContent> calls, TurnRequest request, CancellationToken ct);
 
     public async Task<TurnResult> RunTurnAsync(TurnRequest request, CancellationToken ct)
     {
         // McpClientTool : AIFunction, so the agent's subset goes straight into ChatOptions.
-        // PresentationTools (when set) overrides what's actually sent — see TurnRequest.
-        var options = new ChatOptions { Tools = [.. (IEnumerable<AITool>?)request.PresentationTools ?? request.Tools] };
+        // PresentationTools (when set) overrides what's actually sent — see TurnRequest. When
+        // SupportsTools is false, Tools is omitted entirely rather than sent-and-hoped-ignored —
+        // the model is never even offered tool-calling. With no tools offered, `calls` below is
+        // always empty and the turn naturally ends after iteration 1 with FinalText populated,
+        // going through the same output-stage guardrail check as any other final answer.
+        var options = new ChatOptions
+        {
+            Tools = request.SupportsTools ? [.. (IEnumerable<AITool>?)request.PresentationTools ?? request.Tools] : null
+        };
 
         long? inputTokens = null, outputTokens = null, peakContextTokens = null;
         long? cacheReadTokens = null, cacheCreationTokens = null;
         var toolNames = new List<string>();
         var contextTrimCount = 0;
+        var guardrailFindings = new List<GuardrailFinding>();
+
+        // Input-stage guardrail check — once per RunTurnAsync call (not per iteration), against
+        // the user message the agent hasn't seen yet. Both callers always append the new
+        // ChatRole.User message to request.History before calling RunTurnAsync, so "the last User
+        // message in History" is always exactly that message — one hook point that's naturally
+        // correct for both single-turn and multiturn cases.
+        if (request.Guardrails.Count > 0)
+        {
+            var lastUserText = request.History.LastOrDefault(m => m.Role == ChatRole.User)?.Text ?? "";
+            var (findings, refusal) = await GuardrailEnforcer.CheckInputAsync(
+                request.Guardrails, lastUserText, request.GuardrailClassifierClients, ct);
+            guardrailFindings.AddRange(findings);
+            foreach (var f in findings)
+                request.Progress?.Report($"(guardrail: {f.Action} input — policy '{f.PolicyId}' rule '{f.RuleId}')");
+            if (refusal is not null)
+                return new TurnResult(refusal, 0, 0, [], null, null, HitIterationLimit: false, null,
+                    GuardrailFindings: guardrailFindings);
+        }
 
         for (var iteration = 1; iteration <= request.MaxIterations; iteration++)
         {
@@ -129,7 +183,23 @@ public abstract class LoopStrategyBase : ILoopStrategy
                 }
             }
 
-            var response = await request.Chat.GetResponseAsync(request.History, options, ct);
+            ChatResponse response;
+            try
+            {
+                response = await request.Chat.GetResponseAsync(request.History, options, ct);
+            }
+            catch (Exception ex) when (ex is ClientResultException or JsonException)
+            {
+                // The provider/client library could not parse what came back — e.g. a small
+                // local model emitted malformed tool-call syntax. Distinct from a guardrail block
+                // (enforcement working as designed) and from anything reaching the caller's own
+                // outer generic catch. End the turn immediately rather than continuing with a
+                // possibly-inconsistent History; not a retry framework — one failure ends the
+                // turn.
+                return new TurnResult("", iteration, toolNames.Count, toolNames, inputTokens, outputTokens,
+                    HitIterationLimit: false, peakContextTokens, cacheReadTokens, cacheCreationTokens,
+                    contextTrimCount, GuardrailFindings: guardrailFindings, MalformedResponseError: ex.Message);
+            }
 
             // Sum usage across every round-trip of the turn. Totals stay null when no response
             // reported usage (some OpenAI-compatible servers omit it) — null means "unknown",
@@ -168,13 +238,31 @@ public abstract class LoopStrategyBase : ILoopStrategy
                 .ToList();
 
             if (calls.Count == 0)
-                return new TurnResult(response.Text, iteration, toolNames.Count, toolNames,
+            {
+                // Output-stage guardrail check — final-answer text only (v1), matching what
+                // CriterionEvaluator.EvaluateAsync already ever sees; avoids a classifier call on
+                // every iteration of a tool-heavy turn.
+                var finalText = response.Text;
+                if (request.Guardrails.Count > 0)
+                {
+                    var (findings, refusal) = await GuardrailEnforcer.CheckOutputAsync(
+                        request.Guardrails, finalText, request.GuardrailClassifierClients, ct);
+                    guardrailFindings.AddRange(findings);
+                    foreach (var f in findings)
+                        request.Progress?.Report($"(guardrail: {f.Action} output — policy '{f.PolicyId}' rule '{f.RuleId}')");
+                    if (refusal is not null) finalText = refusal;
+                }
+
+                return new TurnResult(finalText, iteration, toolNames.Count, toolNames,
                                       inputTokens, outputTokens, HitIterationLimit: false, peakContextTokens,
-                                      cacheReadTokens, cacheCreationTokens, contextTrimCount);
+                                      cacheReadTokens, cacheCreationTokens, contextTrimCount,
+                                      GuardrailFindings: guardrailFindings);
+            }
 
             toolNames.AddRange(calls.Select(c => c.Name));
 
-            var results = await ExecuteCallsAsync(calls, request, ct);
+            var (results, callFindings) = await ExecuteCallsAsync(calls, request, ct);
+            guardrailFindings.AddRange(callFindings);
 
             // Feed results back as a tool-role message, then loop so the model can use them —
             // or call more tools.
@@ -183,18 +271,29 @@ public abstract class LoopStrategyBase : ILoopStrategy
 
         return new TurnResult("", request.MaxIterations, toolNames.Count, toolNames,
                               inputTokens, outputTokens, HitIterationLimit: true, peakContextTokens,
-                              cacheReadTokens, cacheCreationTokens, contextTrimCount);
+                              cacheReadTokens, cacheCreationTokens, contextTrimCount,
+                              GuardrailFindings: guardrailFindings);
     }
 
     // Dispatch one call to the owning MCP client. Names resolve against the agent's allowed
     // subset (request.Tools) — never the global catalog — so an agent cannot reach tools
     // outside its servers, and a same-name tool on another server cannot shadow its own.
-    protected static async Task<FunctionResultContent> InvokeToolAsync(
+    // Returns the finding a guardrail tool-gate denial produced, if any — a tuple rather than a
+    // shared mutable accumulator, so ParallelToolsLoopStrategy's Task.WhenAll never has
+    // concurrent writers to worry about.
+    protected static async Task<(FunctionResultContent Result, GuardrailFinding? Finding)> InvokeToolAsync(
         FunctionCallContent call, TurnRequest request, CancellationToken ct)
     {
         var tool = request.Tools.FirstOrDefault(t => t.Name == call.Name);
         if (tool is null)
-            return new FunctionResultContent(call.CallId, $"Error: no tool named '{call.Name}'.");
+            return (new FunctionResultContent(call.CallId, $"Error: no tool named '{call.Name}'."), null);
+
+        if (GuardrailEnforcer.TryGetDenyingPolicy(request.Guardrails, call.Name, out var policyId))
+        {
+            request.Progress?.Report($"(guardrail: block tool '{call.Name}' — policy '{policyId}')");
+            return (new FunctionResultContent(call.CallId, $"Error: tool '{call.Name}' is blocked by guardrail policy '{policyId}'."),
+                    new GuardrailFinding("tool", policyId!, call.Name, "block", call.Name));
+        }
 
         try
         {
@@ -203,12 +302,12 @@ public abstract class LoopStrategyBase : ILoopStrategy
                 foreach (var kv in call.Arguments) args[kv.Key] = kv.Value;
 
             var result = await tool.InvokeAsync(args, ct);
-            return new FunctionResultContent(call.CallId, result);
+            return (new FunctionResultContent(call.CallId, result), null);
         }
         catch (Exception ex)
         {
             // Hand the failure back to the model as the result; it can retry or explain.
-            return new FunctionResultContent(call.CallId, $"Error: {ex.Message}");
+            return (new FunctionResultContent(call.CallId, $"Error: {ex.Message}"), null);
         }
     }
 

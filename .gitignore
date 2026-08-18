@@ -9,6 +9,7 @@ config/agents.json
 config/llm-models.json
 config/mcp-servers.json
 config/tool-costs.json
+config/guardrails.json
 
 # Filled-in Docker Compose config (the .example template stays committed)
 docker-compose.yml
@@ -18,6 +19,7 @@ docker-compose.yml
 # your setup) and isn't meant to be committed.
 config/maverik-suites/*.json
 !config/maverik-suites/smoke.json
+!config/maverik-suites/guardrail-tests.json
 
 # Reporting: saved reports are inherently instance-specific (a suite/date-range filter someone
 # picked for themselves) — unlike dashboards/visualizations there's no "default" report, so none

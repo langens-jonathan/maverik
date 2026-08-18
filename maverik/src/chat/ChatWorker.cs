@@ -1,5 +1,6 @@
 using Microsoft.Extensions.AI;
 using McpHost.Agents;
+using McpHost.Guardrails;
 using McpHost.LlmModel;
 using McpHost.Loop;
 using McpHost.Mcp;
@@ -22,6 +23,7 @@ public sealed class ChatWorker(
     LLMModelRegistry models,
     AgentRegistry agents,
     LoopStrategyRegistry loops,
+    GuardrailRegistry guardrails,
     ILogger<ChatWorker> log) : BackgroundService
 {
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -66,6 +68,7 @@ public sealed class ChatWorker(
         var modelConfig = models.ResolveConfig(agent.Model);
         var contextStrategy = ContextManagementStrategyParser.Parse(agent.ContextManagementStrategy);
         var effectiveMaxContextTokens = agent.SimulatedMaxContextTokens ?? modelConfig?.ContextWindowTokens;
+        var (guardrailPolicies, classifierClients) = guardrails.ResolveForAgent(agent.Guardrails, models);
 
         var result = await strategy.RunTurnAsync(new TurnRequest(
             chat,
@@ -76,7 +79,10 @@ public sealed class ChatWorker(
             new SyncProgress<string>(line => outbox.Add(job.SessionId, line)),
             ContextStrategy: contextStrategy,
             EffectiveMaxContextTokens: effectiveMaxContextTokens,
-            LastKnownContextTokens: conversations.GetLastKnownContextTokens(job.SessionId)), ct);
+            LastKnownContextTokens: conversations.GetLastKnownContextTokens(job.SessionId),
+            Guardrails: guardrailPolicies,
+            GuardrailClassifierClients: classifierClients,
+            SupportsTools: modelConfig?.SupportsTools ?? true), ct);
 
         // Carry this turn's real usage forward so the next turn's very first call (before it has
         // any usage of its own) has something to check against — see ConversationStore.
@@ -93,8 +99,10 @@ public sealed class ChatWorker(
             outbox.Add(job.SessionId, "(warning: context window exceeded)");
         }
 
-        outbox.Add(job.SessionId, result.HitIterationLimit
-            ? "(stopped: hit the tool-iteration limit.)"
-            : result.FinalText);
+        outbox.Add(job.SessionId, result.MalformedResponseError is not null
+            ? $"(error) the model's response could not be parsed — {result.MalformedResponseError}"
+            : result.HitIterationLimit
+                ? "(stopped: hit the tool-iteration limit.)"
+                : result.FinalText);
     }
 }

@@ -5,6 +5,7 @@ using Anthropic;
 using McpHost.Agents;
 using McpHost.Chat;
 using McpHost.Config;
+using McpHost.Guardrails;
 using McpHost.LlmModel;
 using McpHost.Loop;
 using McpHost.Maverik;
@@ -111,6 +112,18 @@ builder.Services.AddSingleton<ToolCostRegistry>(sp => new ToolCostRegistry(toolC
 var (capabilityOverridesFile, _) = configFiles.LoadCapabilityOverrides();
 builder.Services.AddSingleton<CapabilityOverrideRegistry>(sp => new CapabilityOverrideRegistry(capabilityOverridesFile));
 
+// --- Guardrails ---
+// Application-level guardrails an agent can opt into (config/guardrails.json), enforced inside
+// the shared LoopStrategyBase.RunTurnAsync — the same "one loop drives both paths" principle as
+// context management. Unlike tool costs/capability overrides, Build can genuinely fail (a rule
+// can reference an unresolvable classifier model), so this needs LLMModelRegistry at
+// construction time, same as MaverikSuiteRegistry below.
+var (guardrailsFile, _) = configFiles.LoadGuardrails();
+builder.Services.AddSingleton<GuardrailRegistry>(sp => new GuardrailRegistry(
+    guardrailsFile,
+    sp.GetRequiredService<LLMModelRegistry>(),
+    sp.GetRequiredService<ILogger<GuardrailRegistry>>()));
+
 // --- Agents ---
 // AgentRegistry needs configDir so it can find each agent's prompt file
 // (config/prompts/agent/<id>.md) when the prompt isn't inline.
@@ -159,6 +172,10 @@ app.Services.GetRequiredService<AgentRegistry>();
 // Same fail-fast treatment for the MAVERIK suites: nothing else depends on the registry at
 // startup, so without this a broken suite file would only surface on first use.
 app.Services.GetRequiredService<MaverikSuiteRegistry>();
+
+// Same fail-fast treatment for guardrails.json — ChatWorker/MaverikRunner would only construct
+// this lazily on first chat/run otherwise.
+app.Services.GetRequiredService<GuardrailRegistry>();
 
 // Rehydrate run history from results/ on disk — results/{runId}/run.json is the single source
 // of truth, MaverikRunStore is just a fast in-memory index rebuilt from it every startup. No
@@ -384,6 +401,37 @@ app.MapPut("/api/config/capability-overrides", (CapabilityOverridesFile data, Co
     cfg.SaveCapabilityOverrides(data);
     overrides.Reload(data);
     return Results.Ok(new { applied = true, message = (string?)null, restartRequired = false });
+});
+
+app.MapGet("/api/config/guardrails", (ConfigFileService cfg) =>
+{
+    var (data, bootstrapped) = cfg.LoadGuardrails();
+    return Results.Ok(new { bootstrapped, data });
+});
+
+app.MapPut("/api/config/guardrails", (GuardrailsFile data, ConfigFileService cfg, GuardrailRegistry guardrailRegistry) =>
+{
+    var ids = data.Guardrails.Select(g => g.Id).ToList();
+    if (ids.Any(string.IsNullOrWhiteSpace))
+        return Results.BadRequest(new { error = "Every guardrail needs a non-empty id." });
+    if (ids.Distinct(StringComparer.Ordinal).Count() != ids.Count)
+        return Results.BadRequest(new { error = "Guardrail ids must be unique." });
+
+    cfg.SaveGuardrails(data);
+    try
+    {
+        guardrailRegistry.Reload(data);
+        return Results.Ok(new { applied = true, message = (string?)null, restartRequired = false });
+    }
+    catch (Exception ex)
+    {
+        return Results.Ok(new
+        {
+            applied = false,
+            message = $"Saved to disk, but couldn't apply live: {ex.Message} The previous configuration is still active — fix the issue and save again.",
+            restartRequired = false
+        });
+    }
 });
 
 app.MapPut("/api/config/tool-costs", (ToolCostsFile data, ConfigFileService cfg, ToolCostRegistry toolCosts) =>
